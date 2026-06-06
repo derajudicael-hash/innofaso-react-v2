@@ -16,9 +16,7 @@ git clone https://github.com/derajudicael-hash/innofaso-react-v2.git
 cd innofaso-react-v2
 ```
 
-### Étape 2 — Configurer la base de données
-
-Copier le fichier de configuration :
+### Étape 2 — Créer le fichier de configuration
 
 ```bash
 cp innofaso-backend/backend/.env.example innofaso-backend/backend/.env
@@ -29,7 +27,9 @@ cp innofaso-backend/backend/.env.example innofaso-backend/backend/.env
 > copy innofaso-backend\backend\.env.example innofaso-backend\backend\.env
 > ```
 
-Ouvrir `.env` et renseigner ton mot de passe MySQL si nécessaire (par défaut : root sans mot de passe).
+**Si tu utilises XAMPP avec les paramètres par défaut, tu n'as rien d'autre à faire.**
+
+Sinon, ouvrir `innofaso-backend/backend/.env` et modifier uniquement `DB_PASSWORD` avec ton mot de passe MySQL.
 
 ### Étape 3 — Installer les dépendances et créer la base de données
 
