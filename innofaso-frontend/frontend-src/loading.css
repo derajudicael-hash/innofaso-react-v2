@@ -1,0 +1,14 @@
+/* Add these lines at the end of your App.css */
+
+.dash-loading, .dash-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  font-size: 15px;
+  color: var(--txt2);
+  font-weight: 500;
+  gap: 10px;
+}
+
+.dash-error { color: var(--red); }

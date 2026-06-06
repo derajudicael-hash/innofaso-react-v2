@@ -1,0 +1,12 @@
+{
+  "name": "innofaso",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail -n \"BACK,FRONT,MAP\" -c \"blue,green,magenta\" \"npm --prefix innofaso-backend/backend run dev\" \"npm --prefix innofaso-frontend run dev\" \"npm --prefix map run dev\"",
+    "install:all": "npm --prefix innofaso-backend/backend install && npm --prefix innofaso-frontend install && npm --prefix map install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

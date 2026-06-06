@@ -1,0 +1,20 @@
+/* ── Admin nav button (in Sidebar) ── */
+.admin-nav-btn {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px !important;
+  /* Override default nav-item to show border */
+  border-radius: 0 0 0 0;
+  padding-top: 14px;
+}
+
+/* give it a rounded bottom style */
+.admin-nav-btn {
+  border-radius: var(--radius-sm);
+}
+
+.admin-nav-lock {
+  margin-left: auto;
+  font-size: 11px;
+  line-height: 1;
+}
