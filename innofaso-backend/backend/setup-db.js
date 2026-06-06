@@ -2,8 +2,8 @@ const mysql = require("mysql2/promise");
 const fs    = require("fs");
 const path  = require("path");
 
-const envPath     = path.join(__dirname, ".env");
-const envExample  = path.join(__dirname, ".env.example");
+const envPath    = path.join(__dirname, ".env");
+const envExample = path.join(__dirname, ".env.example");
 if (!fs.existsSync(envPath) && fs.existsSync(envExample)) {
   fs.copyFileSync(envExample, envPath);
   console.log(".env créé automatiquement depuis .env.example");
@@ -30,14 +30,38 @@ async function setup() {
   await conn.query(`USE \`${dbName}\``);
 
   const [tables] = await conn.query("SHOW TABLES");
-  if (tables.length > 0) {
-    console.log(`Base de données "${dbName}" déjà initialisée (${tables.length} tables). Import ignoré.`);
-  } else {
-    const sqlFile = path.join(__dirname, "database.sql");
+
+  if (tables.length === 0) {
+    // Première installation
+    const sql = fs.readFileSync(path.join(__dirname, "database.sql"), "utf8");
     console.log("Import du fichier database.sql...");
-    const sql = fs.readFileSync(sqlFile, "utf8");
     await conn.query(sql);
-    console.log("Tables créées avec succès.");
+    console.log("Tables et données créées avec succès.");
+  } else {
+    // Vérifier si on a les nouvelles zones (v3) ou les anciennes (v1/v2)
+    const [existing] = await conn.query(
+      "SELECT 1 FROM zones WHERE map_id = 'stockage_pf' LIMIT 1"
+    );
+    if (existing.length === 0) {
+      console.log("Migration des zones vers le format v3 (factory-hygiene)...");
+      await conn.query("SET FOREIGN_KEY_CHECKS = 0");
+      await conn.query("TRUNCATE TABLE zone_history");
+      await conn.query("TRUNCATE TABLE zones");
+      await conn.query("SET FOREIGN_KEY_CHECKS = 1");
+      // Insérer les nouvelles zones
+      const sql = fs.readFileSync(path.join(__dirname, "database.sql"), "utf8");
+      // Extraire uniquement les INSERT INTO zones et zone_history
+      const insertZones    = sql.match(/INSERT INTO zones[\s\S]*?;/g) || [];
+      const insertHistory  = sql.match(/INSERT INTO zone_history[\s\S]*?;/g) || [];
+      const insertThresh   = sql.match(/INSERT INTO thresholds[\s\S]*?;/g) || [];
+      const insertSite     = sql.match(/INSERT INTO site_info[\s\S]*?;/g) || [];
+      for (const q of [...insertThresh, ...insertSite, ...insertZones, ...insertHistory]) {
+        await conn.query(q);
+      }
+      console.log("Migration zones terminée (13 zones factory-hygiene).");
+    } else {
+      console.log(`Base de données "${dbName}" déjà à jour.`);
+    }
   }
 
   await conn.end();

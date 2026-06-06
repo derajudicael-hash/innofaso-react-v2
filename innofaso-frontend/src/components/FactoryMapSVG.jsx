@@ -1,19 +1,20 @@
-import { useRef, useState, useEffect, useCallback, useMemo } from "react";
-import { SVG_ZONES } from "../data/mapZones";
+import { useRef, useState, useCallback, useMemo } from "react";
+import { ZONES } from "../map/factoryData";
+
+const VW = 1515, VH = 490;
+const px = (p) => (p / 100) * VW;
+const py = (p) => (p / 100) * VH;
+const VB_FULL = `0 0 ${VW} ${VH}`;
+const PAD = 60;
 
 const COLORS = {
-  green:  { fill: "#eaf6f0", stroke: "#1a7a4a", text: "#135536" },
-  orange: { fill: "#fef5ec", stroke: "#c75c16", text: "#7a3610" },
-  red:    { fill: "#fdf1f0", stroke: "#bf3b2e", text: "#7d2519" },
-  none:   { fill: "#f0f3f6", stroke: "#bfccd6", text: "#8ca0b2" },
+  ok:       { fill: "#bbf7d0", stroke: "#22c55e", text: "#15803d" },
+  warning:  { fill: "#fde68a", stroke: "#f59e0b", text: "#92400e" },
+  critical: { fill: "#fecaca", stroke: "#ef4444", text: "#991b1b" },
+  none:     { fill: "#e4e7eb", stroke: "#9ca3af", text: "#4b5563" },
 };
 
-const STATUS_COLOR = { ok: "green", warning: "orange", critical: "red" };
-
-const VB_FULL = "0 0 1050 510";
-const PAD = 40;
-
-function animateViewBox(svgEl, from, to, dur = 360, onDone) {
+function animateViewBox(svgEl, from, to, dur = 320, onDone) {
   const parse = (s) => s.split(" ").map(Number);
   const [x0, y0, w0, h0] = parse(from);
   const [x1, y1, w1, h1] = parse(to);
@@ -21,153 +22,115 @@ function animateViewBox(svgEl, from, to, dur = 360, onDone) {
   function step(now) {
     const p = Math.min((now - start) / dur, 1);
     const e = p < 0.5 ? 2 * p * p : (4 - 2 * p) * p - 1;
-    const vb = `${x0 + (x1 - x0) * e} ${y0 + (y1 - y0) * e} ${w0 + (w1 - w0) * e} ${h0 + (h1 - h0) * e}`;
-    svgEl.setAttribute("viewBox", vb);
+    svgEl.setAttribute("viewBox", `${x0+(x1-x0)*e} ${y0+(y1-y0)*e} ${w0+(w1-w0)*e} ${h0+(h1-h0)*e}`);
     if (p < 1) requestAnimationFrame(step);
     else onDone?.(to);
   }
   requestAnimationFrame(step);
 }
 
-function ptPos(zone, index, total) {
-  const cols = Math.min(total, 2);
-  return {
-    cx: zone.x + zone.w * 0.3 + (index % cols) * (zone.w * 0.35),
-    cy: zone.y + zone.h * 0.62 + Math.floor(index / cols) * 16,
-  };
-}
-
 export default function FactoryMapSVG({ zones, selectedId, onSelect }) {
-  const svgRef    = useRef(null);
-  const byMapIdRef = useRef({});
+  const svgRef  = useRef(null);
   const [viewBox, setViewBox] = useState(VB_FULL);
 
-  // Mémoïser byMapId pour éviter les re-créations inutiles
   const byMapId = useMemo(() => {
-    const map = {};
-    (zones || []).forEach((z) => { if (z.mapId) map[z.mapId] = z; });
-    return map;
+    const m = {};
+    (zones || []).forEach(z => { if (z.mapId) m[z.mapId] = z; });
+    return m;
   }, [zones]);
 
-  // Garder une ref synchronisée (évite stale closure dans les callbacks)
-  byMapIdRef.current = byMapId;
-
-  // Derive which SVG zone is selected
-  const selectedDbZone = (zones || []).find((z) => z.id === selectedId);
+  const selectedDbZone = (zones || []).find(z => z.id === selectedId);
   const selectedMapId  = selectedDbZone?.mapId ?? null;
 
   const handleClick = useCallback((svgZone) => {
-    const dbZone = byMapIdRef.current[svgZone.id];
+    const dbZone = byMapId[svgZone.id];
     if (!svgRef.current) return;
-
-    // Lire le viewBox courant depuis le DOM pour éviter la stale closure
-    const currentVb = svgRef.current.getAttribute("viewBox") || VB_FULL;
-    const targetVb  = `${svgZone.x - PAD} ${svgZone.y - PAD} ${svgZone.w + PAD * 2} ${svgZone.h + PAD * 2}`;
-    animateViewBox(svgRef.current, currentVb, targetVb, 360, setViewBox);
-
+    const cur = svgRef.current.getAttribute("viewBox") || VB_FULL;
+    const zx = px(svgZone.x), zy = py(svgZone.y), zw = px(svgZone.width), zh = py(svgZone.height);
+    const target = `${zx - PAD} ${zy - PAD} ${zw + PAD * 2} ${zh + PAD * 2}`;
+    animateViewBox(svgRef.current, cur, target, 320, setViewBox);
     if (dbZone) onSelect(dbZone.id);
-  }, [onSelect]);
+  }, [byMapId, onSelect]);
 
-  useEffect(() => {
-    if (!svgRef.current || selectedId !== null) return;
-    // Lire le viewBox courant depuis le DOM (évite la stale closure)
-    const currentVb = svgRef.current.getAttribute("viewBox") || VB_FULL;
-    animateViewBox(svgRef.current, currentVb, VB_FULL, 360, setViewBox);
-  }, [selectedId]);
+  const handleReset = useCallback(() => {
+    if (!svgRef.current) return;
+    const cur = svgRef.current.getAttribute("viewBox") || VB_FULL;
+    animateViewBox(svgRef.current, cur, VB_FULL, 320, setViewBox);
+    onSelect(null);
+  }, [onSelect]);
 
   return (
     <div className="panel map-panel">
-      <div className="panel-header">Cartographie de l'usine</div>
+      <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>Cartographie de l'usine</span>
+        {selectedMapId && (
+          <button onClick={handleReset} style={{ fontSize: 11, color: "#1a6fa3", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>
+            Vue globale
+          </button>
+        )}
+      </div>
       <div className="map-svg-body">
-        <svg
-          ref={svgRef}
-          viewBox={viewBox}
-          xmlns="http://www.w3.org/2000/svg"
-          preserveAspectRatio="xMidYMid meet"
-          className="map-svg"
-        >
-          {SVG_ZONES.map((z) => {
-            const dbZone   = byMapId[z.id];
-            const colorKey = dbZone ? (STATUS_COLOR[dbZone.status] || "green") : "none";
-            const pal      = COLORS[colorKey];
-            const isSel    = selectedMapId === z.id;
-            const isCrit   = dbZone?.status === "critical";
+        <svg ref={svgRef} viewBox={viewBox} xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" className="map-svg">
+
+          {/* Outer walls */}
+          <rect x={px(0)} y={py(4.3)} width={px(100)} height={py(73.3)} fill="none" stroke="#bbb" strokeWidth="2"/>
+          <rect x={px(43)} y={py(77.6)} width={px(45.8)} height={py(22.4)} fill="none" stroke="#bbb" strokeWidth="2"/>
+
+          {/* Top elements */}
+          <rect x={px(36)} y={py(0)} width={px(16)} height={py(4.3)} fill="#f0f0f0" stroke="#ccc" strokeWidth="1"/>
+          <text x={px(44)} y={py(2.5)} textAnchor="middle" fontSize="6" fill="#888" fontFamily="Arial,sans-serif">Compresseur / CTA</text>
+
+          {/* Cuve huile */}
+          {[71.5, 76.2, 80.9].map((cx, i) => (
+            <circle key={i} cx={px(cx)} cy={py(2.2)} r={px(1.8)} fill="white" stroke="#ccc" strokeWidth="1"/>
+          ))}
+
+          {/* SAS MP */}
+          <rect x={px(85.5)} y={py(0)} width={px(3.1)} height={py(4.3)} fill="#f0f4f0" stroke="#82b366" strokeWidth="1.5"/>
+          <rect x={px(88.6)} y={py(0)} width={px(11.4)} height={py(4.3)} fill="#f0f4f0" stroke="#82b366" strokeWidth="1.5"/>
+
+          {/* SAS S+A+H */}
+          <rect x={px(83.8)} y={py(10.2)} width={px(4.8)} height={py(32)} fill="#daeeff" stroke="#5aabcc" strokeWidth="1"/>
+
+          {/* Toilettes F */}
+          <rect x={px(83.8)} y={py(42.2)} width={px(4.8)} height={py(35.4)} fill="#f8d7da" stroke="#cc3333" strokeWidth="1"/>
+
+          {/* Zones */}
+          {ZONES.map(zone => {
+            const zx = px(zone.x), zy = py(zone.y), zw = px(zone.width), zh = py(zone.height);
+            const dbZone = byMapId[zone.id];
+            const pal    = dbZone ? COLORS[dbZone.status] : COLORS.none;
+            const isSel  = selectedMapId === zone.id;
+            const isCrit = dbZone?.status === "critical";
 
             return (
-              <g
-                key={z.id}
-                onClick={() => handleClick(z)}
-                style={{
-                  cursor:  "pointer",
-                  opacity: selectedMapId && !isSel ? 0.65 : 1,
-                  transition: "opacity 0.2s",
-                }}
-              >
-                <rect
-                  x={z.x} y={z.y} width={z.w} height={z.h}
-                  fill={pal.fill}
-                  stroke={isSel ? pal.text : pal.stroke}
-                  strokeWidth={isSel ? 2.5 : 1.5}
-                  rx={4}
-                />
-
-                {/* Pulse ring pour zones critiques */}
+              <g key={zone.id} onClick={() => handleClick(zone)}
+                style={{ cursor: "pointer", opacity: selectedMapId && !isSel ? 0.6 : 1, transition: "opacity 0.2s" }}>
+                <rect x={zx} y={zy} width={zw} height={zh}
+                  fill={pal.fill} stroke={isSel ? pal.text : pal.stroke} strokeWidth={isSel ? 2.5 : 1.5} rx={3}/>
                 {isCrit && (
-                  <rect
-                    x={z.x + 2} y={z.y + 2}
-                    width={z.w - 4} height={z.h - 4}
-                    fill="none"
-                    stroke={pal.stroke}
-                    strokeWidth={1}
-                    rx={3}
-                    className="svg-pulse-ring"
-                  />
+                  <rect x={zx+2} y={zy+2} width={zw-4} height={zh-4} fill="none"
+                    stroke={pal.stroke} strokeWidth={1} rx={2} className="svg-pulse-ring"/>
                 )}
-
-                {/* Label zone */}
-                <text
-                  x={z.x + z.w / 2} y={z.y + z.h * 0.22}
-                  textAnchor="middle" fontSize={z.w < 60 ? 6 : 9}
-                  fontWeight={600} fill={pal.text}
-                  style={{ pointerEvents: "none" }}
-                >
-                  {z.label}
+                <text x={zx+zw/2} y={zy+12} textAnchor="middle" fontSize={Math.min(9, zw/8)} fontWeight="700"
+                  fill={pal.text} fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
+                  {zone.name}
                 </text>
-
-                {/* Sous-label (si assez large) */}
-                {z.sub && z.w >= 80 && (
-                  <text
-                    x={z.x + z.w / 2} y={z.y + z.h * 0.22 + 10}
-                    textAnchor="middle" fontSize={6} fill={pal.stroke}
-                    style={{ pointerEvents: "none" }}
-                  >
-                    {z.sub}
+                {zone.area && zw > 80 && (
+                  <text x={zx+zw/2} y={zy+22} textAnchor="middle" fontSize="6"
+                    fill={pal.stroke} fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
+                    {zone.area}
                   </text>
                 )}
-
-                {/* Valeur UFC (si DB zone disponible et zone assez grande) */}
-                {dbZone && z.w >= 60 && z.h >= 50 && (
-                  <text
-                    x={z.x + z.w / 2} y={z.y + z.h * 0.58}
-                    textAnchor="middle" fontSize={z.w < 100 ? 7 : 9}
-                    fontWeight={700} fill={pal.text}
-                    style={{ pointerEvents: "none" }}
-                  >
+                {dbZone && zw >= 80 && zh >= 50 && (
+                  <text x={zx+zw/2} y={zy+zh/2+4} textAnchor="middle" fontSize={zw < 120 ? "7" : "9"}
+                    fontWeight="700" fill={pal.text} fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
                     {dbZone.ufc} UFC/cm²
                   </text>
                 )}
-
-                {/* Points de prélèvement */}
-                {z.pointIds.map((ptId, i) => {
-                  const pos = ptPos(z, i, z.pointIds.length);
-                  return (
-                    <circle
-                      key={ptId}
-                      cx={pos.cx} cy={pos.cy} r={3.5}
-                      fill="#E24B4A"
-                      style={{ pointerEvents: "none" }}
-                    />
-                  );
+                {zone.points.map((pt, i) => {
+                  const ptx = px(pt.x), pty = py(pt.y);
+                  return <circle key={pt.id} cx={ptx} cy={pty} r={3.5} fill="#E24B4A" style={{ pointerEvents: "none" }}/>;
                 })}
               </g>
             );
@@ -175,11 +138,11 @@ export default function FactoryMapSVG({ zones, selectedId, onSelect }) {
         </svg>
 
         <div className="map-legend">
-          <div className="legend-item"><span className="legend-dot" style={{ background: "#7abf62" }} />Conforme</div>
-          <div className="legend-item"><span className="legend-dot" style={{ background: "#e8a430" }} />Surveillance</div>
-          <div className="legend-item"><span className="legend-dot" style={{ background: "#e06050" }} />Critique</div>
-          <div className="legend-item"><span className="legend-dot" style={{ background: "#d1d5db" }} />Sans données</div>
-          <div className="legend-item"><span className="legend-dot" style={{ background: "#E24B4A" }} />Pt. prélèvement</div>
+          <div className="legend-item"><span className="legend-dot" style={{ background: "#22c55e" }}/>Conforme</div>
+          <div className="legend-item"><span className="legend-dot" style={{ background: "#f59e0b" }}/>Surveillance</div>
+          <div className="legend-item"><span className="legend-dot" style={{ background: "#ef4444" }}/>Critique</div>
+          <div className="legend-item"><span className="legend-dot" style={{ background: "#9ca3af" }}/>Sans données</div>
+          <div className="legend-item"><span className="legend-dot" style={{ background: "#E24B4A" }}/>Pt. prélèvement</div>
         </div>
       </div>
     </div>

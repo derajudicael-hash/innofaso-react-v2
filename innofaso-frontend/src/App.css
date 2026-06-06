@@ -83,7 +83,6 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  position: relative;
 }
 
 .scroll-area {
@@ -101,6 +100,13 @@ body {
 .scroll-area::-webkit-scrollbar-thumb {
   background: #d1d5db;
   border-radius: 3px;
+}
+
+.scroll-area--map {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ─────────────────────────────────────────────

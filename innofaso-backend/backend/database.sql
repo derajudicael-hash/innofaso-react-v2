@@ -1,7 +1,6 @@
 -- ═══════════════════════════════════════════
---  INNOFASO — Base de données v2.0
+--  INNOFASO — Base de données v3.0
 --  Usine Plumpy'Nut — La Grâce, Burkina Faso
---  Importer dans phpMyAdmin ou via MySQL CLI
 -- ═══════════════════════════════════════════
 
 CREATE DATABASE IF NOT EXISTS innofaso
@@ -9,12 +8,9 @@ CREATE DATABASE IF NOT EXISTS innofaso
 
 USE innofaso;
 
--- ─────────────────────────────────────────
---  TABLE: zones
--- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS zones (
   id            INT AUTO_INCREMENT PRIMARY KEY,
-  map_id        VARCHAR(10)   NULL,
+  map_id        VARCHAR(50)   NULL,
   label         VARCHAR(100)  NOT NULL,
   status        ENUM('critical','warning','ok') NOT NULL DEFAULT 'ok',
   ufc           DECIMAL(8,2)  NOT NULL DEFAULT 0,
@@ -29,9 +25,6 @@ CREATE TABLE IF NOT EXISTS zones (
   updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- ─────────────────────────────────────────
---  TABLE: zone_history
--- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS zone_history (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   zone_id     INT NOT NULL,
@@ -40,9 +33,6 @@ CREATE TABLE IF NOT EXISTS zone_history (
   FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
 );
 
--- ─────────────────────────────────────────
---  TABLE: thresholds
--- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS thresholds (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   name       VARCHAR(50)  NOT NULL UNIQUE,
@@ -50,18 +40,12 @@ CREATE TABLE IF NOT EXISTS thresholds (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- ─────────────────────────────────────────
---  TABLE: site_info
--- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS site_info (
   id        INT AUTO_INCREMENT PRIMARY KEY,
   key_name  VARCHAR(50)  NOT NULL UNIQUE,
   key_value VARCHAR(255) NOT NULL DEFAULT ''
 );
 
--- ─────────────────────────────────────────
---  TABLE: admin_users
--- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admin_users (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   username   VARCHAR(50)  NOT NULL UNIQUE,
@@ -71,70 +55,55 @@ CREATE TABLE IF NOT EXISTS admin_users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ═══════════════════════════════════════════
---  DONNEES INITIALES
--- ═══════════════════════════════════════════
+-- ═══════════════════════════════════════
+--  DONNÉES INITIALES
+-- ═══════════════════════════════════════
 
 INSERT INTO thresholds (name, value) VALUES
 ('critical', 50),
-('warning',  40);
+('warning',  40)
+ON DUPLICATE KEY UPDATE value = VALUES(value);
 
 INSERT INTO site_info (key_name, key_value) VALUES
 ('name',    'Usine Plumpy-Nut La Grace'),
 ('city',    'Ouagadougou'),
 ('country', 'Burkina Faso'),
 ('contact', 'qualite@lagrace.bf'),
-('phone',   '+226 25 38 00 00');
+('phone',   '+226 25 38 00 00')
+ON DUPLICATE KEY UPDATE key_value = VALUES(key_value);
 
--- Comptes admin (hashs placeholder — lancer seed-passwords.js apres import)
 INSERT INTO admin_users (username, password, name, role) VALUES
 ('admin',   '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrateur Principal', 'superadmin'),
-('qualite', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Responsable Qualite',      'editor');
+('qualite', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Responsable Qualite',      'editor')
+ON DUPLICATE KEY UPDATE name = VALUES(name);
 
--- 21 zones de l'usine avec correspondance SVG
+-- ── 13 zones de l'usine (IDs = factory-hygiene zone IDs) ──────────────────
 INSERT INTO zones (map_id, label, status, ufc, seuil, responsible, last_check, next_check, alert_cls, alert_title, alert_desc) VALUES
-('z1',  'Zone 1 - Stockage Produits Finis', 'ok',       18, 50, 'Ouedraogo Paul',  '25/05/2026 06:30', '25/05/2026 14:30', 'good', 'Zone conforme',       'Niveaux de contamination dans les limites acceptables.'),
-('z2',  'Zone 2 - Emballage',              'ok',       22, 50, 'Sawadogo Marie',  '25/05/2026 06:45', '25/05/2026 14:45', 'good', 'Zone conforme',       'Niveaux de contamination dans les limites acceptables.'),
-('z3',  'Zone 3 - Entree emballages',      'warning',  41, 50, 'Traore Amina',    '25/05/2026 07:00', '25/05/2026 11:00', 'warn', 'Surveillance requise','Niveau proche du seuil — renforcer les controles.'),
-('z4',  'Zone 4 - Laverie Buanderie',      'warning',  44, 50, 'Traore Amina',    '25/05/2026 07:10', '25/05/2026 11:10', 'warn', 'Surveillance requise','Niveau eleve — risque de depassement imminent.'),
-('z5',  'Zone 5 - Conditionnement',        'ok',       25, 50, 'Sawadogo Marie',  '25/05/2026 07:20', '25/05/2026 15:20', 'good', 'Zone conforme',       'Niveaux de contamination dans les limites acceptables.'),
-('z6',  'Zone 6 - Melange',                'warning',  43, 50, 'Kone Ibrahim',    '25/05/2026 07:30', '25/05/2026 11:30', 'warn', 'Surveillance requise','Niveau proche du seuil — surveiller evolution.'),
-('z7',  'Zone 7 - Premelange',             'critical', 65, 50, 'Kone Ibrahim',    '25/05/2026 07:45', '25/05/2026 09:45', 'crit', 'Action requise',      'DEPASSEMENT CRITIQUE — arreter production et decontaminer immediatement.'),
-('z8',  'Zone 8 - Pesee poudre',           'critical', 58, 50, 'Zongo Mariam',    '25/05/2026 08:00', '25/05/2026 10:00', 'crit', 'Action requise',      'DEPASSEMENT CRITIQUE — contamination detectee sur equipement de pesee.'),
-('z9',  'Zone 9 - Salle de pompage',       'warning',  45, 50, 'Kabore Seydou',   '25/05/2026 08:15', '25/05/2026 12:15', 'warn', 'Surveillance requise','Niveau eleve — verifier etancheite des installations.'),
-('z10', 'Zone 10 - SAS Sechage',           'ok',       28, 50, 'Kabore Seydou',   '25/05/2026 08:30', '25/05/2026 16:30', 'good', 'Zone conforme',       'Niveaux de contamination dans les limites acceptables.'),
-('z11', 'Zone 11 - Matieres Premieres',    'ok',       15, 50, 'Compaore Jean',   '25/05/2026 08:45', '25/05/2026 16:45', 'good', 'Zone conforme',       'Niveaux de contamination dans les limites acceptables.'),
-('z12', 'Zone 12 - SAS Poudres',           'warning',  42, 50, 'Zongo Mariam',    '25/05/2026 09:00', '25/05/2026 13:00', 'warn', 'Surveillance requise','Niveau proche du seuil dans le SAS — augmenter nettoyage.'),
-('z13', 'Zone 13 - Chambre Froide',        'ok',       12, 50, 'Compaore Jean',   '25/05/2026 09:15', '25/05/2026 17:15', 'good', 'Zone conforme',       'Excellente maitrise en zone froide.'),
-('z14', 'Zone 14 - Vestiaires F+E',        'warning',  47, 50, 'Ouedraogo Paul',  '25/05/2026 09:30', '25/05/2026 13:30', 'warn', 'Surveillance requise','Niveau eleve — verifier hygiene du personnel.'),
-('z15', 'Zone 15 - Toilettes Lavabos',     'critical', 72, 50, 'Ouedraogo Paul',  '25/05/2026 09:45', '25/05/2026 11:45', 'crit', 'Action requise',      'DEPASSEMENT CRITIQUE — sanitaires contamines. Nettoyage urgence.'),
-('z16', 'Zone 16 - Couloir technique',     'ok',       30, 50, 'Sawadogo Marie',  '25/05/2026 10:00', '25/05/2026 16:00', 'good', 'Zone conforme',       'Niveaux de contamination dans les limites acceptables.'),
-('z17', 'Zone 17 - Compresseur Secheur',   'ok',        8, 50, 'Kabore Seydou',   '25/05/2026 10:15', '25/05/2026 16:15', 'good', 'Zone conforme',       'Zone technique — excellent niveau de proprete.'),
-('z19', 'Zone 19 - Cuve 1',               'ok',        5, 50, 'Kone Ibrahim',    '25/05/2026 10:30', '25/05/2026 16:30', 'good', 'Zone conforme',       'Cuve hermetique — contamination quasi nulle.'),
-('z20', 'Zone 20 - Cuve 2',               'ok',        7, 50, 'Kone Ibrahim',    '25/05/2026 10:30', '25/05/2026 16:30', 'good', 'Zone conforme',       'Cuve hermetique — contamination quasi nulle.'),
-('z21', 'Zone 21 - Cuve 3',               'ok',        6, 50, 'Kone Ibrahim',    '25/05/2026 10:30', '25/05/2026 16:30', 'good', 'Zone conforme',       'Cuve hermetique — contamination quasi nulle.'),
-('z22', 'Zone 22 - SAS Air',              'warning',  40, 50, 'Kabore Seydou',   '25/05/2026 11:00', '25/05/2026 15:00', 'warn', 'Surveillance requise','Seuil alerte atteint dans le SAS entree air.');
+('stockage_pf',       'Stockage Produits Finis',  'ok',       85,  500, 'Ouedraogo Paul',    '06/06/2026 06:30', '06/06/2026 14:30', 'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
+('conditionnement',   'Conditionnement',           'ok',        4,   10, 'Sawadogo Marie',    '06/06/2026 06:45', '06/06/2026 14:45', 'good', 'Zone conforme',        'Excellente maîtrise de la contamination.'),
+('melange',           'Mélange',                   'warning',   8,   10, 'Kone Ibrahim',      '06/06/2026 07:00', '06/06/2026 11:00', 'warn', 'Surveillance requise', 'Niveau proche du seuil — renforcer les contrôles.'),
+('premix',            'PreMélange',                'critical', 13,   10, 'Kone Ibrahim',      '06/06/2026 07:15', '06/06/2026 09:15', 'crit', 'Action requise',       'DÉPASSEMENT — arrêter et décontaminer immédiatement.'),
+('pesage',            'Pesage poudres',            'ok',        3,   10, 'Zongo Mariam',      '06/06/2026 07:30', '06/06/2026 15:30', 'good', 'Zone conforme',        'Bon niveau de maîtrise.'),
+('huile',             'Huile et pesage S+A+H',     'warning',   9,   10, 'Kabore Seydou',     '06/06/2026 07:45', '06/06/2026 11:45', 'warn', 'Surveillance requise', 'Niveau élevé — vérifier équipements.'),
+('sas_poudres',       'SAS poudres',               'ok',       45,  100, 'Zongo Mariam',      '06/06/2026 08:00', '06/06/2026 16:00', 'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
+('matieres_premieres','Matières Premières',         'ok',      120,  500, 'Compaore Jean',     '06/06/2026 08:15', '06/06/2026 16:15', 'good', 'Zone conforme',        'Zone grise — contamination maîtrisée.'),
+('laverie',           'Laverie + buanderie',        'ok',      230,  500, 'Traore Amina',      '06/06/2026 08:30', '06/06/2026 16:30', 'good', 'Zone conforme',        'Niveaux normaux pour zone laverie.'),
+('vestiaire_laverie', 'Vestiaire Laverie',          'ok',      180,  500, 'Traore Amina',      '06/06/2026 08:45', '06/06/2026 16:45', 'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('vestiaires_h',      'Vestiaires H',               'ok',      290,  500, 'Ouedraogo Paul',    '06/06/2026 09:00', '06/06/2026 17:00', 'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('vestiaires_visiteur','Vestiaires Visiteur',        'warning', 415,  500, 'Compaore Jean',     '06/06/2026 09:15', '06/06/2026 13:15', 'warn', 'Surveillance requise', 'Niveau élevé — vérifier hygiène visiteurs.'),
+('vestiaires_f',      'Vestiaires F',               'ok',      150,  500, 'Sawadogo Marie',    '06/06/2026 09:30', '06/06/2026 17:30', 'good', 'Zone conforme',        'Niveaux dans les limites.');
 
--- Historique 7 jours par zone (valeur la plus ancienne en premier)
-INSERT INTO zone_history (zone_id, ufc) VALUES (1,21),(1,20),(1,19),(1,17),(1,18),(1,19),(1,18);
-INSERT INTO zone_history (zone_id, ufc) VALUES (2,25),(2,24),(2,23),(2,21),(2,22),(2,23),(2,22);
-INSERT INTO zone_history (zone_id, ufc) VALUES (3,32),(3,35),(3,37),(3,38),(3,39),(3,41),(3,41);
-INSERT INTO zone_history (zone_id, ufc) VALUES (4,36),(4,38),(4,40),(4,41),(4,42),(4,44),(4,44);
-INSERT INTO zone_history (zone_id, ufc) VALUES (5,27),(5,26),(5,25),(5,24),(5,25),(5,26),(5,25);
-INSERT INTO zone_history (zone_id, ufc) VALUES (6,34),(6,37),(6,38),(6,40),(6,41),(6,43),(6,43);
-INSERT INTO zone_history (zone_id, ufc) VALUES (7,40),(7,45),(7,48),(7,52),(7,56),(7,60),(7,65);
-INSERT INTO zone_history (zone_id, ufc) VALUES (8,38),(8,42),(8,45),(8,49),(8,52),(8,55),(8,58);
-INSERT INTO zone_history (zone_id, ufc) VALUES (9,37),(9,40),(9,42),(9,43),(9,44),(9,45),(9,45);
-INSERT INTO zone_history (zone_id, ufc) VALUES (10,30),(10,29),(10,28),(10,27),(10,28),(10,29),(10,28);
-INSERT INTO zone_history (zone_id, ufc) VALUES (11,17),(11,16),(11,15),(11,14),(11,15),(11,16),(11,15);
-INSERT INTO zone_history (zone_id, ufc) VALUES (12,33),(12,36),(12,38),(12,39),(12,40),(12,42),(12,42);
-INSERT INTO zone_history (zone_id, ufc) VALUES (13,14),(13,13),(13,12),(13,11),(13,12),(13,13),(13,12);
-INSERT INTO zone_history (zone_id, ufc) VALUES (14,38),(14,41),(14,43),(14,45),(14,46),(14,47),(14,47);
-INSERT INTO zone_history (zone_id, ufc) VALUES (15,52),(15,56),(15,58),(15,62),(15,65),(15,68),(15,72);
-INSERT INTO zone_history (zone_id, ufc) VALUES (16,32),(16,31),(16,30),(16,29),(16,30),(16,31),(16,30);
-INSERT INTO zone_history (zone_id, ufc) VALUES (17,9),(17,8),(17,7),(17,8),(17,9),(17,8),(17,8);
--- z19 = DB id 18 | z20 = DB id 19 | z21 = DB id 20 | z22 = DB id 21
-INSERT INTO zone_history (zone_id, ufc) VALUES (18,6),(18,5),(18,5),(18,6),(18,5),(18,5),(18,5);
-INSERT INTO zone_history (zone_id, ufc) VALUES (19,8),(19,7),(19,6),(19,7),(19,8),(19,7),(19,7);
-INSERT INTO zone_history (zone_id, ufc) VALUES (20,7),(20,6),(20,5),(20,6),(20,7),(20,6),(20,6);
-INSERT INTO zone_history (zone_id, ufc) VALUES (21,34),(21,36),(21,37),(21,38),(21,39),(21,40),(21,40);
+-- ── Historique 7 jours ───────────────────────────────────────────────────
+INSERT INTO zone_history (zone_id, ufc) VALUES (1,90),(1,88),(1,86),(1,84),(1,87),(1,85),(1,85);
+INSERT INTO zone_history (zone_id, ufc) VALUES (2,5),(2,6),(2,4),(2,5),(2,4),(2,4),(2,4);
+INSERT INTO zone_history (zone_id, ufc) VALUES (3,5),(3,6),(3,7),(3,7),(3,8),(3,8),(3,8);
+INSERT INTO zone_history (zone_id, ufc) VALUES (4,8),(4,9),(4,10),(4,11),(4,12),(4,13),(4,13);
+INSERT INTO zone_history (zone_id, ufc) VALUES (5,4),(5,3),(5,3),(5,4),(5,3),(5,3),(5,3);
+INSERT INTO zone_history (zone_id, ufc) VALUES (6,6),(6,7),(6,8),(6,8),(6,9),(6,9),(6,9);
+INSERT INTO zone_history (zone_id, ufc) VALUES (7,38),(7,40),(7,42),(7,43),(7,44),(7,45),(7,45);
+INSERT INTO zone_history (zone_id, ufc) VALUES (8,125),(8,122),(8,118),(8,121),(8,120),(8,120),(8,120);
+INSERT INTO zone_history (zone_id, ufc) VALUES (9,220),(9,225),(9,228),(9,232),(9,230),(9,230),(9,230);
+INSERT INTO zone_history (zone_id, ufc) VALUES (10,185),(10,182),(10,180),(10,178),(10,180),(10,180),(10,180);
+INSERT INTO zone_history (zone_id, ufc) VALUES (11,280),(11,285),(11,290),(11,288),(11,292),(11,290),(11,290);
+INSERT INTO zone_history (zone_id, ufc) VALUES (12,380),(12,390),(12,400),(12,405),(12,410),(12,415),(12,415);
+INSERT INTO zone_history (zone_id, ufc) VALUES (13,155),(13,152),(13,150),(13,148),(13,150),(13,150),(13,150);

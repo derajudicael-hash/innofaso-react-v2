@@ -25,9 +25,7 @@ export function usePersistedFiles() {
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([]);
   const [fileResults, setFileResults] = useState<Record<string, LabResult[]>>({});
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
 
-  // Load from localStorage on mount
   useEffect(() => {
     const entries = safeGet<FileEntry[]>(KEY_ENTRIES, []);
     const results = safeGet<Record<string, LabResult[]>>(KEY_RESULTS, {});
@@ -38,7 +36,6 @@ export function usePersistedFiles() {
     }
     setFileEntries(entries);
     setFileResults(results);
-    setHydrated(true);
   }, []);
 
   const addFile = useCallback((results: LabResult[], name: string) => {
@@ -68,7 +65,6 @@ export function usePersistedFiles() {
     localStorage.removeItem(KEY_ENTRIES); localStorage.removeItem(KEY_RESULTS);
   }, []);
 
-  // Build Map for the active file only
   const activeResults = new Map<string, LabResult[]>();
   if (activeFileId && fileResults[activeFileId]) {
     for (const r of fileResults[activeFileId]) {
@@ -79,5 +75,5 @@ export function usePersistedFiles() {
     }
   }
 
-  return { fileEntries, activeFileId, activeResults, hydrated, addFile, removeFile, clearAll, setActiveFileId };
+  return { fileEntries, activeFileId, activeResults, addFile, removeFile, clearAll, setActiveFileId };
 }

@@ -8,9 +8,10 @@ import AlertsPage    from "./components/AlertsPage";
 import DashboardPage from "./pages/DashboardPage";
 import HistoryPage   from "./pages/HistoryPage";
 import SettingsPage  from "./pages/SettingsPage";
+import CartoPage     from "./pages/CartoPage";
 
-import { AuthProvider, useAuth }           from "./context/AuthContext";
-import { AdminDataProvider }               from "./context/AdminDataContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { AdminDataProvider }     from "./context/AdminDataContext";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -33,6 +34,7 @@ function useClock() {
 function Router({ activeNav }) {
   switch (activeNav) {
     case "dashboard": return <DashboardPage />;
+    case "carto":     return <CartoPage />;
     case "alerts":    return <AlertsPage />;
     case "admin":     return <AdminPage />;
     case "history":   return <HistoryPage />;
@@ -60,6 +62,8 @@ function InnerApp() {
     return <LoginPage onBack={() => setShowLogin(false)} />;
   }
 
+  const isCarto = activeNav === "carto";
+
   return (
     <div className="app-root">
       <Sidebar
@@ -71,17 +75,9 @@ function InnerApp() {
       <div className="main-area">
         <Topbar clock={clock} activeNav={activeNav} />
         <main className="main-content">
-          {activeNav === "carto" ? (
-            <iframe
-              src="http://localhost:3000"
-              title="Cartographie InnoFaso"
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }}
-            />
-          ) : (
-            <div className="scroll-area">
-              <Router activeNav={activeNav} />
-            </div>
-          )}
+          <div className={`scroll-area${isCarto ? " scroll-area--map" : ""}`}>
+            <Router activeNav={activeNav} />
+          </div>
         </main>
       </div>
     </div>

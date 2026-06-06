@@ -4,13 +4,11 @@ const auth    = require("../middleware/auth");
 
 const router = express.Router();
 
-// Helper — compute status from ufc vs thresholds
-async function computeStatus(ufc) {
-  const [rows] = await db.query("SELECT name, value FROM thresholds");
-  const t = {};
-  rows.forEach((r) => { t[r.name] = Number(r.value); });
-  if (ufc >= (t.critical ?? 50)) return "critical";
-  if (ufc >= (t.warning  ?? 40)) return "warning";
+// Compute status from ufc vs zone's own seuil
+function computeStatus(ufc, seuil) {
+  const s = Number(seuil) || 50;
+  if (ufc >= s)       return "critical";
+  if (ufc >= s * 0.8) return "warning";
   return "ok";
 }
 
@@ -81,7 +79,7 @@ router.post("/", auth, async (req, res) => {
 
   try {
     const numUfc   = Number(ufc);
-    const status   = await computeStatus(numUfc);
+    const status   = computeStatus(numUfc, seuil ?? 50);
     const alertInfo = ALERT_MAP[status];
 
     const [result] = await db.query(
@@ -130,7 +128,7 @@ router.put("/:id", auth, async (req, res) => {
 
   try {
     const numUfc    = Number(ufc);
-    const status    = await computeStatus(numUfc);
+    const status    = computeStatus(numUfc, seuil ?? 50);
     const alertInfo = ALERT_MAP[status];
 
     await db.query(

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import FactoryMap from './components/FactoryMap';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/UploadPanel';
@@ -8,12 +8,11 @@ import FileSidebar from './components/FileSidebar';
 import { Zone, SamplingPoint } from './data/factoryData';
 import { parseFile } from './utils/labParser';
 import { usePersistedFiles } from './hooks/usePersistedFiles';
-import { useState } from 'react';
 
-export default function Home() {
-  const { fileEntries, activeFileId, activeResults, hydrated, addFile, removeFile, clearAll, setActiveFileId } = usePersistedFiles();
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
+function App() {
+  const { fileEntries, activeFileId, activeResults, addFile, removeFile, clearAll, setActiveFileId } = usePersistedFiles();
+  const [isLoading, setIsLoading]         = useState(false);
+  const [selectedZone, setSelectedZone]   = useState<Zone | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<SamplingPoint | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -35,19 +34,10 @@ export default function Home() {
 
   const activeFile = fileEntries.find(f => f.id === activeFileId) ?? null;
 
-  // Don't render until hydrated to avoid localStorage mismatch
-  if (!hydrated) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f8fafc', color: '#94a3b8', fontFamily: 'Inter, Arial, sans-serif', fontSize: 14 }}>
-      Chargement…
-    </div>
-  );
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', fontFamily: 'Inter, Arial, sans-serif' }}>
       <TopBar activeFile={activeFile} />
-
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left file sidebar */}
         <FileSidebar
           files={fileEntries}
           activeFileId={activeFileId}
@@ -57,11 +47,12 @@ export default function Home() {
           onUpload={() => inputRef.current?.click()}
           isLoading={isLoading}
         />
-
-        <input ref={inputRef} type="file" accept=".docx,.doc,.csv,.xlsx,.xls" multiple
-          style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
-
-        {/* Map */}
+        <input
+          ref={inputRef} type="file"
+          accept=".docx,.doc,.csv,.xlsx,.xls" multiple
+          style={{ display: 'none' }}
+          onChange={e => handleFiles(e.target.files)}
+        />
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
           <FactoryMap
             results={activeResults}
@@ -77,8 +68,6 @@ export default function Home() {
             </div>
           )}
         </div>
-
-        {/* Right detail sidebar */}
         {selectedZone && (
           <Sidebar
             zone={selectedZone}
@@ -92,4 +81,11 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+export default function Home() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+  return <App />;
 }
