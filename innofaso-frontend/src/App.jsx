@@ -91,7 +91,7 @@ function InnerApp() {
       <div className="main-area">
         <Topbar clock={clock} activeNav={activeNav} />
         <main className="main-content">
-          <div className="scroll-area">
+          <div className={`scroll-area${activeNav === "carto" ? " scroll-area--map" : ""}`}>
             <Router activeNav={activeNav} />
           </div>
         </main>

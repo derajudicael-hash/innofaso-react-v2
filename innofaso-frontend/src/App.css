@@ -102,6 +102,11 @@ body {
   border-radius: 3px;
 }
 
+.scroll-area--map {
+  padding: 0;
+  overflow: hidden;
+}
+
 /* ─────────────────────────────────────────────
    SIDEBAR
 ───────────────────────────────────────────── */
