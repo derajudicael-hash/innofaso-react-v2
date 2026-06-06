@@ -12,6 +12,11 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  experimental: {
+    turbopack: {
+      root: __dirname,
+    },
+  } as never,
 };
 
 export default nextConfig;
