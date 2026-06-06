@@ -1,33 +1,19 @@
-import { useState, useRef } from "react";
-import FactoryMap       from "../map/FactoryMap";
-import MapDetailSidebar from "../map/MapDetailSidebar";
-import MapFileSidebar   from "../map/MapFileSidebar";
+import { useRef, useState } from "react";
+import FactoryMap  from "../map/FactoryMap";
+import Sidebar     from "../map/Sidebar";
+import TopBar      from "../map/UploadPanel";
+import FileSidebar from "../map/FileSidebar";
+import { parseFile }         from "../map/labParser";
 import { usePersistedFiles } from "../map/usePersistedFiles";
-import { parseFile }    from "../map/labParser";
-import { useAdminData } from "../context/AdminDataContext";
+import { useAdminData }      from "../context/AdminDataContext";
 
 export default function CartoPage() {
-  const { zones } = useAdminData();
-  const { fileEntries, activeFileId, activeResults, addFile, removeFile, clearAll, setActiveFileId } = usePersistedFiles();
+  const { zones: backendZones, loading } = useAdminData();
+  const { fileEntries, activeFileId, activeResults, hydrated, addFile, removeFile, clearAll, setActiveFileId } = usePersistedFiles();
   const [isLoading, setIsLoading]         = useState(false);
   const [selectedZone, setSelectedZone]   = useState(null);
   const [selectedPoint, setSelectedPoint] = useState(null);
   const inputRef = useRef(null);
-
-  // Map backend zones to the format FactoryMap expects
-  const backendZones = (zones || []).map(z => ({
-    id:      z.id,
-    mapId:   z.mapId,
-    label:   z.label,
-    status:  z.status,
-    ufc:     z.ufc,
-    seuil:   z.seuil,
-  }));
-
-  // Find backend zone matching selected factory zone
-  const activeBackendZone = selectedZone
-    ? backendZones.find(bz => bz.mapId === selectedZone.id)
-    : undefined;
 
   async function handleFiles(files) {
     if (!files || files.length === 0) return;
@@ -47,36 +33,29 @@ export default function CartoPage() {
 
   const activeFile = fileEntries.find(f => f.id === activeFileId) ?? null;
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', fontFamily: 'DM Sans, Inter, Arial, sans-serif' }}>
-      {/* Top bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', height: 44, background: '#ffffff', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 7, background: 'linear-gradient(135deg,#1a6fa3,#0e4d7a)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: 12 }}>✦</div>
-          <span style={{ fontWeight: 800, fontSize: 14, color: '#0f172a', letterSpacing: '-0.3px' }}>
-            Inno<span style={{ color: '#1a6fa3' }}>Faso</span>
-            <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: 12, marginLeft: 8 }}>Cartographie</span>
-          </span>
-        </div>
-        <div style={{ width: 1, height: 20, background: '#e2e8f0' }} />
-        {activeFile ? (
-          <span style={{ fontSize: 12, color: '#475569' }}>
-            Affichage : <strong style={{ color: '#0f172a' }}>
-              {activeFile.parameter === 'enterobacteries' ? 'Entérobactéries' : 'Salmonelles'}
-            </strong>
-            {activeFile.weekNum && ` · Semaine ${activeFile.weekNum}`}
-            {activeFile.date && ` · ${activeFile.date}`}
-          </span>
-        ) : (
-          <span style={{ fontSize: 12, color: '#94a3b8' }}>
-            {backendZones.length > 0 ? `${backendZones.length} zones chargées depuis la base de données` : 'Importez un bulletin depuis le panneau gauche'}
-          </span>
-        )}
-      </div>
+  // Map backend zones to the format FactoryMap expects (mapId = factory-hygiene zone id)
+  const mappedBackendZones = (backendZones || [])
+    .filter(z => z.mapId)
+    .map(z => ({ id: z.id, mapId: z.mapId, status: z.status, ufc: z.ufc, seuil: z.seuil, label: z.label }));
 
-      {/* Main content */}
+  // Find the backend zone corresponding to the selected factory zone
+  const activeBackendZone = selectedZone
+    ? mappedBackendZones.find(bz => bz.mapId === selectedZone.id)
+    : undefined;
+
+  if (!hydrated) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#f8fafc', color: '#94a3b8', fontFamily: 'Inter, Arial, sans-serif', fontSize: 14 }}>
+      Chargement…
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', fontFamily: 'Inter, Arial, sans-serif' }}>
+      <TopBar activeFile={activeFile} />
+
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <MapFileSidebar
+        {/* Left file sidebar */}
+        <FileSidebar
           files={fileEntries}
           activeFileId={activeFileId}
           onSelectFile={id => { setActiveFileId(id); setSelectedZone(null); setSelectedPoint(null); }}
@@ -89,15 +68,16 @@ export default function CartoPage() {
         <input ref={inputRef} type="file" accept=".docx,.doc,.csv,.xlsx,.xls" multiple
           style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
 
+        {/* Map */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
           <FactoryMap
             results={activeResults}
-            backendZones={backendZones}
+            backendZones={mappedBackendZones}
             selectedZone={selectedZone}
             onSelectZone={zone => { setSelectedZone(zone); setSelectedPoint(null); }}
             onSelectPoint={(pt, zone) => { setSelectedZone(zone); setSelectedPoint(pt); }}
           />
-          {activeResults.size === 0 && backendZones.length === 0 && (
+          {activeResults.size === 0 && !selectedZone && (
             <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }}>
               <div style={{ padding: '5px 14px', borderRadius: 999, background: 'rgba(255,255,255,0.92)', border: '1px solid #e2e8f0', fontSize: 11, color: '#64748b', boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }}>
                 Cliquez sur une zone · Scroll pour zoomer · Glissez pour naviguer
@@ -106,8 +86,9 @@ export default function CartoPage() {
           )}
         </div>
 
+        {/* Right detail sidebar */}
         {selectedZone && (
-          <MapDetailSidebar
+          <Sidebar
             zone={selectedZone}
             point={selectedPoint}
             results={activeResults}

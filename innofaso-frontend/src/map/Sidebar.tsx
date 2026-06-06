@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import { Zone, SamplingPoint } from './factoryData';
 import { LabResult, ResultLevel, getLevel, getZoneLevel, getPointOverallLevel, LEVEL_COLORS, LEVEL_LABELS } from './labParser';
@@ -7,25 +9,11 @@ interface Props {
   zone: Zone | null;
   point: SamplingPoint | null;
   results: Map<string, LabResult[]>;
-  backendZone?: BackendZone;
+  backendZone?: BackendZone;             // ← seul ajout au zip original
   onClose: () => void;
   onSelectPoint: (p: SamplingPoint) => void;
   onBackToZone: () => void;
 }
-
-const ZONE_TYPE_LABEL: Record<string, string> = {
-  white:    '🔵 Zone Blanche — Haut Risque',
-  grey:     '🟢 Zone Grise — Faible Risque',
-  vestiaire:'🔴 Zone Rouge — Vestiaires',
-  laverie:  '🟡 Zone Laverie',
-  external: '⚪ Zone Périphérique',
-};
-const POINT_TYPE_DESC: Record<string, string> = {
-  '1': '1.x.x — Surface en contact produit (seuil <10 UFC/cm²)',
-  '2': '2.x.x — Surface à proximité (seuil <50 UFC/cm²)',
-  '3': '3.x.x — Surface support / sol / mur (seuil <100 UFC/cm²)',
-  '4': '4.x.x — Points hors zone blanche (seuil <500 UFC/cm²)',
-};
 
 function LevelBadge({ level }: { level: ResultLevel }) {
   const c = LEVEL_COLORS[level];
@@ -36,6 +24,20 @@ function LevelBadge({ level }: { level: ResultLevel }) {
     </span>
   );
 }
+
+const ZONE_TYPE_LABEL: Record<string, string> = {
+  white: '🔵 Zone Blanche — Haut Risque',
+  grey: '🟢 Zone Grise — Faible Risque',
+  vestiaire: '🔴 Zone Rouge — Vestiaires',
+  laverie: '🟡 Zone Laverie',
+  external: '⚪ Zone Périphérique',
+};
+const POINT_TYPE_DESC: Record<string, string> = {
+  '1': '1.x.x — Surface en contact produit (seuil <10 UFC/cm²)',
+  '2': '2.x.x — Surface à proximité (seuil <50 UFC/cm²)',
+  '3': '3.x.x — Surface support / sol / mur (seuil <100 UFC/cm²)',
+  '4': '4.x.x — Points hors zone blanche (seuil <500 UFC/cm²)',
+};
 
 function ResultBlock({ result }: { result: LabResult }) {
   const level = getLevel(result);
@@ -50,86 +52,126 @@ function ResultBlock({ result }: { result: LabResult }) {
         <LevelBadge level={level} />
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 28, fontWeight: 900, color: c }}>
-          {isSalmo ? (result.detected ? 'DÉTECTÉE' : 'Absente') : result.numericValue !== null ? (result.numericValue < 1 ? '<1' : result.numericValue.toFixed(1)) : result.rawValue || '—'}
+        <span style={{ fontSize: 28, fontWeight: 900, color: c, fontFamily: 'Inter, system-ui' }}>
+          {isSalmo
+            ? (result.detected ? 'DÉTECTÉE' : 'Absente')
+            : result.numericValue !== null
+              ? (result.numericValue < 1 ? '<1' : result.numericValue.toFixed(1))
+              : result.rawValue || '—'
+          }
         </span>
         {!isSalmo && <span style={{ fontSize: 13, color: '#94a3b8' }}>UFC/cm²</span>}
-        {!isSalmo && result.spec && <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 4 }}>/ seuil &lt;{result.spec}</span>}
+        {!isSalmo && result.spec && (
+          <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 4 }}>/ seuil &lt;{result.spec}</span>
+        )}
       </div>
       <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 11, color: '#94a3b8' }}>
         {result.date && <span>📅 {result.date}</span>}
         {result.method && <span>🔬 {result.method}</span>}
         {result.replicates > 1 && <span>×{result.replicates} réplicats</span>}
       </div>
-      {result.reportRef && <div style={{ marginTop: 3, fontSize: 10, color: '#cbd5e0' }}>N°{result.reportRef} · Semaine {result.weekNum}</div>}
+      {result.reportRef && (
+        <div style={{ marginTop: 3, fontSize: 10, color: '#cbd5e0' }}>N°{result.reportRef} · Semaine {result.weekNum}</div>
+      )}
     </div>
   );
 }
 
-export default function MapDetailSidebar({ zone, point, results, backendZone, onClose, onSelectPoint, onBackToZone }: Props) {
+export default function Sidebar({ zone, point, results, backendZone, onClose, onSelectPoint, onBackToZone }: Props) {
   if (!zone) return null;
   const zoneLevel = getZoneLevel(results, zone.points.map(p => p.id));
   const withData = zone.points.filter(p => results.has(p.id)).length;
 
+  const s: Record<string, React.CSSProperties> = {
+    root: { display: 'flex', flexDirection: 'column', width: 320, minWidth: 320, height: '100%', background: '#ffffff', borderLeft: '1px solid #e2e8f0', fontFamily: 'Inter, system-ui, sans-serif' },
+    header: { padding: '14px 16px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' },
+    body: { flex: 1, overflowY: 'auto', padding: '14px 16px' },
+    label: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.07em', color: '#94a3b8', marginBottom: 6 },
+    card: { background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', marginBottom: 8 },
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: 320, minWidth: 320, height: '100%', background: '#ffffff', borderLeft: '1px solid #e2e8f0', fontFamily: 'DM Sans, system-ui, sans-serif' }}>
+    <div className="slide-in" style={s.root}>
       {/* Header */}
-      <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+      <div style={s.header}>
         {point && (
-          <button onClick={onBackToZone} style={{ fontSize: 12, color: '#1a6fa3', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button onClick={onBackToZone} style={{ fontSize: 12, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
             ← {zone.name}
           </button>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h2 style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', margin: 0 }}>{point ? point.label : zone.name}</h2>
-            <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0' }}>{point ? POINT_TYPE_DESC[point.pointType] : ZONE_TYPE_LABEL[zone.category]}</p>
+            <h2 style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', margin: 0 }}>
+              {point ? point.label : zone.name}
+            </h2>
+            <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0' }}>
+              {point ? POINT_TYPE_DESC[point.pointType] : ZONE_TYPE_LABEL[zone.category]}
+            </p>
           </div>
           <button onClick={onClose} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', color: '#64748b', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+      <div style={s.body} className="scrollbar-thin">
         {!point ? (
-          <div>
-            {/* Backend data */}
+          <div className="fade-in">
+            {/* ── Données backend temps réel (ajout minimal) ── */}
             {backendZone && withData === 0 && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 6 }}>Données temps réel</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div style={{ ...s.card, marginBottom: 12 }}>
+                <div style={s.label}>Données temps réel</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>UFC/cm²</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a' }}>{backendZone.ufc}</div>
+                    <div style={{ fontSize: 32, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{backendZone.ufc}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>UFC/cm² · seuil {backendZone.seuil}</div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>Seuil</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a' }}>{backendZone.seuil}</div>
-                  </div>
-                </div>
-                <div style={{ marginTop: 8 }}>
                   <LevelBadge level={backendZone.status === 'critical' ? 'red' : backendZone.status === 'warning' ? 'orange' : 'green'} />
                 </div>
               </div>
             )}
 
-            {/* Bulletin data */}
-            {withData > 0 && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div><div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>Bulletin importé</div><LevelBadge level={zoneLevel} /></div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: '#0f172a' }}>{withData}<span style={{ fontSize: 13, fontWeight: 400, color: '#94a3b8' }}>/{zone.points.length}</span></div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>points analysés</div>
-                  </div>
-                </div>
+            {/* Status row */}
+            <div style={{ ...s.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={s.label}>Statut zone</div>
+                <LevelBadge level={zoneLevel} />
               </div>
-            )}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: '#0f172a' }}>{withData}<span style={{ fontSize: 13, fontWeight: 400, color: '#94a3b8' }}>/{zone.points.length}</span></div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>points analysés</div>
+              </div>
+            </div>
+
+            {/* Distribution bar */}
+            {withData > 0 && (() => {
+              const levels: ResultLevel[] = ['green', 'absent', 'orange', 'red', 'present'];
+              return (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={s.label}>Distribution des résultats</div>
+                  {levels.map(lvl => {
+                    const count = zone.points.filter(p => {
+                      const rs = results.get(p.id) || [];
+                      return rs.some(r => getLevel(r) === lvl);
+                    }).length;
+                    if (count === 0) return null;
+                    const c = LEVEL_COLORS[lvl];
+                    const pct = Math.round(count / withData * 100);
+                    return (
+                      <div key={lvl} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0 }} />
+                        <div style={{ flex: 1, height: 6, background: '#f1f5f9', borderRadius: 999, overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: c, borderRadius: 999 }} />
+                        </div>
+                        <span style={{ fontSize: 11, color: c, minWidth: 50, textAlign: 'right' }}>{count} · {LEVEL_LABELS[lvl]}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Points list */}
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-              Points de prélèvement ({zone.points.length})
-            </div>
+            <div style={s.label}>Points de prélèvement ({zone.points.length})</div>
             {zone.points.map(pt => {
               const ptR = results.get(pt.id) || [];
               const lvl = ptR.length > 0 ? getPointOverallLevel(ptR) : 'unknown';
@@ -156,12 +198,12 @@ export default function MapDetailSidebar({ zone, point, results, backendZone, on
             })}
           </div>
         ) : (
-          <div>
+          <div className="fade-in">
             <p style={{ fontSize: 12, color: '#64748b', marginBottom: 14, lineHeight: 1.5 }}>{point.description}</p>
             {(() => {
               const ptR = results.get(point.id) || [];
               if (ptR.length === 0) return (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 24, textAlign: 'center' }}>
+                <div style={{ ...s.card, textAlign: 'center', padding: 24 }}>
                   <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
                   <div style={{ fontSize: 13, color: '#64748b' }}>Aucun résultat pour ce point</div>
                   <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Importez un bulletin d'analyse</div>
@@ -169,8 +211,8 @@ export default function MapDetailSidebar({ zone, point, results, backendZone, on
               );
               return ptR.map(r => <ResultBlock key={r.parameter} result={r} />);
             })()}
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', marginTop: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 6 }}>Spécifications réglementaires</div>
+            <div style={{ ...s.card, marginTop: 8 }}>
+              <div style={s.label}>Spécifications réglementaires</div>
               <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.7 }}>
                 {point.pointType === '1' && 'EB < 10 UFC/cm² · Salmonelles : absence/cm²'}
                 {point.pointType === '2' && 'EB < 50 UFC/cm² · Salmonelles : absence/cm²'}

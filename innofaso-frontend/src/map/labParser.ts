@@ -72,6 +72,8 @@ export function getPointOverallLevel(results: LabResult[]): ResultLevel {
   return 'unknown';
 }
 
+// ─── Parsing helpers ────────────────────────────────────────
+
 function extractId(cell: string): string {
   const m = cell.trim().match(/^(\d+\.\d+(?:\.\d+)?)/);
   return m ? m[1] : '';
@@ -81,16 +83,28 @@ function extractDesc(cell: string): string {
   return cell.replace(/^\d+\.\d+(?:\.\d+)?\s*/, '').trim();
 }
 
+// "Ns= inférieur à 1.100" → 1.1
+// In French lab docs: 1.100 with dot = 1,1 (French decimal was comma)
+// These are UFC values near 0 (<1 basically)
 function parseUFCValue(raw: string): number | null {
   const lower = raw.toLowerCase().trim();
+  // Extract the numeric part after "inférieur à" or "<"
   const m = lower.match(/(?:inf[eé]rieur\s*[aà]|<)\s*([\d.,]+)/);
   if (!m) {
     const n = parseFloat(lower.replace(',', '.'));
     return isNaN(n) ? null : n;
   }
   let numStr = m[1];
+  // French: 1.100 means 1,1 (thousands sep = dot, decimal = comma)
+  // But in this doc they write "1.100" for ~1.1 UFC
+  // Heuristic: if 3 digits after dot → thousands sep → treat as X.Y
   numStr = numStr.replace(/(\d+)\.(\d{3})$/, '$1$2').replace(',', '.').replace(/\.(\d)/, '.$1');
-  if (/^\d+\.\d{3}$/.test(m[1])) {
+  // simpler: just treat the whole thing as <1.1
+  // Actually for "1.100" → remove the trailing zeros → 1.1
+  if (/^\d+\.\d+$/.test(numStr)) {
+    // already decimal
+  } else if (/^\d+\.\d{3}$/.test(m[1])) {
+    // "1.100" → "1.1"
     numStr = m[1].replace(/\.(\d)0+$/, '.$1');
   }
   const val = parseFloat(numStr);
@@ -117,9 +131,13 @@ function detectParam(text: string): ParameterType {
   return 'unknown';
 }
 
+// ─── DOCX parser ────────────────────────────────────────────
+
 export async function parseDocx(file: File): Promise<LabResult[]> {
   const arrayBuffer = await file.arrayBuffer();
   const { value: html } = await mammoth.convertToHtml({ arrayBuffer });
+
+  // Extract metadata from plain text
   const plain = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   const param = detectParam(plain);
   const methodM = plain.match(/Méthode\s*[:\s]+([^\s<]+(?:\s+[^\s<]+){0,3})/i);
@@ -130,6 +148,8 @@ export async function parseDocx(file: File): Promise<LabResult[]> {
   const reportRef = refM ? refM[1] : '';
   const weekM = plain.match(/Semaine\s*N°\s*[:\s]*(\d+)/i);
   const weekNum = weekM ? weekM[1] : '';
+
+  // Parse table rows from HTML
   const rows: LabResult[] = [];
   const trPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let trMatch;
@@ -146,18 +166,32 @@ export async function parseDocx(file: File): Promise<LabResult[]> {
     if (cells.length < 2) continue;
     const pointId = extractId(cells[0]);
     if (!pointId) continue;
+    // Skip header rows
     if (cells[0].toLowerCase().includes('points de prél')) continue;
+
     const rawValue = cells[1] || '';
     const specRaw = cells[2] || '';
+
     rows.push({
-      pointId, description: extractDesc(cells[0]), rawValue,
+      pointId,
+      description: extractDesc(cells[0]),
+      rawValue,
       numericValue: param !== 'salmonelles' ? parseUFCValue(rawValue) : null,
       detected: param === 'salmonelles' ? parseDetected(rawValue) : null,
-      spec: parseSpec(specRaw), parameter: param, method, date, reportRef, weekNum, replicates: 1,
+      spec: parseSpec(specRaw),
+      parameter: param,
+      method,
+      date,
+      reportRef,
+      weekNum,
+      replicates: 1,
     });
   }
+
   return mergeReplicates(rows);
 }
+
+// ─── CSV parser ─────────────────────────────────────────────
 
 export async function parseCSV(file: File): Promise<LabResult[]> {
   return new Promise((resolve, reject) => {
@@ -175,12 +209,17 @@ export async function parseCSV(file: File): Promise<LabResult[]> {
               : paramRaw.includes('entero') || paramRaw.includes('entéro') ? 'enterobacteries' : 'enterobacteries';
             const numVal = parseFloat(rawValue.replace(',', '.'));
             return {
-              pointId, description: row['description'] || '', rawValue,
+              pointId, description: row['description'] || '',
+              rawValue,
               numericValue: isNaN(numVal) ? null : numVal,
-              detected: null, spec: parseSpec(specRaw) ?? null,
-              parameter: param, method: row['method'] || row['methode'] || 'CSV',
-              date: row['date'] || row['Date'] || '', reportRef: row['ref'] || '',
-              weekNum: row['semaine'] || row['week'] || '', replicates: 1,
+              detected: null,
+              spec: parseSpec(specRaw) ?? (parseInt(pointId) === 1 ? 10 : parseInt(pointId) === 2 ? 50 : parseInt(pointId) === 3 ? 100 : 500),
+              parameter: param,
+              method: row['method'] || row['methode'] || 'CSV',
+              date: row['date'] || row['Date'] || '',
+              reportRef: row['ref'] || '',
+              weekNum: row['semaine'] || row['week'] || '',
+              replicates: 1,
             };
           }).filter(r => r.pointId);
           resolve(mergeReplicates(results));
@@ -191,11 +230,14 @@ export async function parseCSV(file: File): Promise<LabResult[]> {
   });
 }
 
+// ─── XLSX parser ────────────────────────────────────────────
+
 export async function parseXLSX(file: File): Promise<LabResult[]> {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+
   const results: LabResult[] = rows.map(row => {
     const pointId = String(row['point_id'] || row['Point ID'] || row['id'] || row['ID'] || '').trim();
     const rawValue = String(row['value'] || row['Value'] || row['resultat'] || row['résultat'] || '');
@@ -205,23 +247,32 @@ export async function parseXLSX(file: File): Promise<LabResult[]> {
     const param: ParameterType = paramRaw.includes('salmo') ? 'salmonelles'
       : paramRaw.includes('entero') || paramRaw.includes('entéro') ? 'enterobacteries' : 'enterobacteries';
     return {
-      pointId, description: String(row['description'] || ''), rawValue,
-      numericValue: isNaN(numVal) ? null : numVal, detected: null,
-      spec: parseSpec(specRaw), parameter: param,
+      pointId, description: String(row['description'] || ''),
+      rawValue,
+      numericValue: isNaN(numVal) ? null : numVal,
+      detected: null,
+      spec: parseSpec(specRaw),
+      parameter: param,
       method: String(row['method'] || row['methode'] || 'Excel'),
       date: String(row['date'] || row['Date'] || ''),
-      reportRef: String(row['ref'] || ''), weekNum: String(row['semaine'] || row['week'] || ''),
+      reportRef: String(row['ref'] || ''),
+      weekNum: String(row['semaine'] || row['week'] || ''),
       replicates: 1,
     };
   }).filter(r => r.pointId);
+
   return mergeReplicates(results);
 }
 
+// ─── Main entry ─────────────────────────────────────────────
+
 export async function parseFile(file: File): Promise<LabResult[]> {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  if (ext === 'docx' || ext === 'doc') return parseDocx(file);
+  if (ext === 'docx') return parseDocx(file);
   if (ext === 'csv') return parseCSV(file);
   if (ext === 'xlsx' || ext === 'xls') return parseXLSX(file);
+  // Try docx as fallback for .doc
+  if (ext === 'doc') return parseDocx(file);
   throw new Error(`Format non supporté: .${ext}`);
 }
 

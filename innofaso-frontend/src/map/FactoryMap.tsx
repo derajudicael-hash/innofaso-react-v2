@@ -1,32 +1,38 @@
+'use client';
+
 import React, { useRef, useState, useCallback } from 'react';
 import { ZONES, Zone, SamplingPoint } from './factoryData';
 import { LabResult, ResultLevel, getPointOverallLevel, getZoneLevel, LEVEL_COLORS } from './labParser';
 
+// ── Ajout minimal : type pour les données backend ──
 export interface BackendZone {
   id: string;
   mapId: string;
-  label: string;
   status: 'ok' | 'warning' | 'critical';
   ufc: number;
   seuil: number;
+  label?: string;
 }
 
 interface Props {
   results: Map<string, LabResult[]>;
-  backendZones?: BackendZone[];
+  backendZones?: BackendZone[];          // ← seul ajout au zip original
   selectedZone: Zone | null;
   onSelectZone: (z: Zone | null) => void;
   onSelectPoint: (p: SamplingPoint, z: Zone) => void;
 }
 
+// ViewBox exactly matching the image proportions: ~1515 × 490
 const VW = 1515, VH = 490;
 const px = (p: number) => (p / 100) * VW;
 const py = (p: number) => (p / 100) * VH;
 
+// ── Gray defaults — used whenever zone/point has no data ──
 const GRAY_ZONE_FILL   = '#e4e7eb';
 const GRAY_ZONE_STROKE = '#9ca3af';
 const GRAY_DOT         = '#9ca3af';
 
+// ── Zone fills when data is present ──
 const ZONE_DATA_FILL: Record<ResultLevel, string> = {
   green:   '#bbf7d0',
   orange:  '#fde68a',
@@ -36,27 +42,34 @@ const ZONE_DATA_FILL: Record<ResultLevel, string> = {
   unknown: GRAY_ZONE_FILL,
 };
 
-const BACKEND_FILL = { ok: '#bbf7d0', warning: '#fde68a', critical: '#fecaca' };
+// ── Backend fallback fills ──
+const BACKEND_FILL   = { ok: '#bbf7d0', warning: '#fde68a', critical: '#fecaca' };
 const BACKEND_STROKE = { ok: '#22c55e', warning: '#f59e0b', critical: '#ef4444' };
 
 export default function FactoryMap({ results, backendZones = [], selectedZone, onSelectZone, onSelectPoint }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [vb, setVb] = useState({ x: 0, y: 0, w: VW, h: VH });
   const [hovZone, setHovZone] = useState<string | null>(null);
-  const [hovPt, setHovPt]   = useState<string | null>(null);
+  const [hovPt, setHovPt] = useState<string | null>(null);
   const panning = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
+  const hasData = results.size > 0;
 
-  const byMapId: Record<string, BackendZone> = {};
-  backendZones.forEach(z => { if (z.mapId) byMapId[z.mapId] = z; });
+  // ── Backend lookup (ajout minimal) ──
+  const backendByMapId: Record<string, BackendZone> = {};
+  backendZones.forEach(bz => { if (bz.mapId) backendByMapId[bz.mapId] = bz; });
 
   const setView = (x: number, y: number, w: number, h: number) => setVb({ x, y, w, h });
-  const reset = useCallback(() => setView(0, 0, VW, VH), []);
 
   const zoomToZone = useCallback((zone: Zone) => {
     const pad = 60;
-    setView(px(zone.x) - pad, py(zone.y) - pad, px(zone.width) + pad * 2, py(zone.height) + pad * 2);
+    setView(
+      px(zone.x) - pad, py(zone.y) - pad,
+      px(zone.width) + pad * 2, py(zone.height) + pad * 2
+    );
   }, []);
+
+  const reset = useCallback(() => setView(0, 0, VW, VH), []);
 
   function onWheel(e: React.WheelEvent) {
     e.preventDefault();
@@ -68,10 +81,7 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
     const nh = Math.min(VH * 2, Math.max(60, vb.h * f));
     setView(mx - (mx - vb.x) / vb.w * nw, my - (my - vb.y) / vb.h * nh, nw, nh);
   }
-
-  function onMouseDown(e: React.MouseEvent) {
-    if (e.button === 0) { panning.current = true; lastMouse.current = { x: e.clientX, y: e.clientY }; }
-  }
+  function onMouseDown(e: React.MouseEvent) { if (e.button === 0) { panning.current = true; lastMouse.current = { x: e.clientX, y: e.clientY }; } }
   function onMouseMove(e: React.MouseEvent) {
     if (!panning.current) return;
     const rect = svgRef.current!.getBoundingClientRect();
@@ -105,18 +115,22 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
         style={{ width: '100%', height: '100%', display: 'block', cursor: panning.current ? 'grabbing' : 'grab' }}
         onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
       >
+        {/* Off-white map background */}
         <rect width={VW} height={VH} fill="#f5f5f5" />
 
-        {/* Outer walls */}
+        {/* ── OUTER WALLS ── */}
         <rect x={px(0)} y={py(4.3)} width={px(100)} height={py(73.3)} fill="none" stroke="#666" strokeWidth="2"/>
         <rect x={px(43.0)} y={py(77.6)} width={px(45.8)} height={py(22.4)} fill="none" stroke="#666" strokeWidth="2"/>
 
-        {/* Top elements */}
+        {/* ── TOP ELEMENTS ── */}
         <rect x={px(36)} y={py(0)} width={px(16)} height={py(4.3)} fill="#f0f0f0" stroke="#999" strokeWidth="1"/>
-        <text x={px(44)} y={py(1.8)} textAnchor="middle" fontSize="7" fontWeight="600" fill="#555" fontFamily="Arial,sans-serif">Compresseur Sécheur + CTA + Aspirateur</text>
+        <text x={px(44)} y={py(1.8)} textAnchor="middle" fontSize="7" fontWeight="600" fill="#555" fontFamily="Arial,sans-serif">Compresseur Sécheur + CTA +Aspirateur</text>
         <text x={px(44)} y={py(3.4)} textAnchor="middle" fontSize="6" fill="#777" fontFamily="Arial,sans-serif">30m²</text>
+        <rect x={px(52.5)} y={py(0.3)} width={px(1.8)} height={py(3.6)} fill="none" stroke="#999" strokeWidth="1"/>
+        <circle cx={px(55.5)} cy={py(2.1)} r={px(1)} fill="none" stroke="#999" strokeWidth="1"/>
+        <circle cx={px(57.8)} cy={py(2.1)} r={px(1)} fill="none" stroke="#999" strokeWidth="1"/>
 
-        {/* Cuve huile circles */}
+        {/* ── RIGHT-TOP ELEMENTS ── */}
         {[71.5, 76.2, 80.9].map((cx, i) => (
           <g key={i}>
             <circle cx={px(cx)} cy={py(2.2)} r={px(1.8)} fill="white" stroke="#999" strokeWidth="1"/>
@@ -124,85 +138,103 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
             <text x={px(cx)} y={py(3)} textAnchor="middle" fontSize="5.5" fill="#666" fontFamily="Arial,sans-serif">huile</text>
           </g>
         ))}
-
-        {/* SAS MP */}
         <rect x={px(85.5)} y={py(0)} width={px(3.1)} height={py(4.3)} fill="#f0f0f0" stroke="#82b366" strokeWidth="1.5"/>
         <text x={px(87.05)} y={py(1.8)} textAnchor="middle" fontSize="6" fontWeight="700" fill="#4a7c3f" fontFamily="Arial,sans-serif">SAS</text>
         <text x={px(87.05)} y={py(3.2)} textAnchor="middle" fontSize="6" fontWeight="700" fill="#4a7c3f" fontFamily="Arial,sans-serif">MP</text>
         <rect x={px(88.6)} y={py(0)} width={px(11.4)} height={py(4.3)} fill="#f0f0f0" stroke="#82b366" strokeWidth="1.5"/>
-        <text x={px(94.3)} y={py(2.2)} textAnchor="middle" fontSize="5.8" fill="#4a7c3f" fontFamily="Arial,sans-serif">Zone de prélèvement hôte</text>
+        <text x={px(94.3)} y={py(1.6)} textAnchor="middle" fontSize="5.8" fill="#4a7c3f" fontFamily="Arial,sans-serif">Zone de</text>
+        <text x={px(94.3)} y={py(2.9)} textAnchor="middle" fontSize="5.8" fill="#4a7c3f" fontFamily="Arial,sans-serif">prélèvement hôte</text>
 
-        {/* SAS S+A+H */}
+        {/* ── SAS S+A+H ── */}
         <rect x={px(83.8)} y={py(10.2)} width={px(4.8)} height={py(32)} fill="#daeeff" stroke="#5aabcc" strokeWidth="1"/>
-        <text x={px(86.2)} y={py(23)} textAnchor="middle" fontSize="6" fill="#1a6682" fontFamily="Arial,sans-serif" transform={`rotate(-90,${px(86.2)},${py(23)})`}>SAS S+A+H  10m²</text>
+        <text x={px(86.2)} y={py(23)} textAnchor="middle" fontSize="6" fill="#1a6682" fontFamily="Arial,sans-serif"
+          transform={`rotate(-90,${px(86.2)},${py(23)})`}>SAS S+A+H  10m²</text>
 
-        {/* Toilettes F */}
+        {/* ── TOILETTES F ── */}
         <rect x={px(83.8)} y={py(42.2)} width={px(4.8)} height={py(35.4)} fill="#f8d7da" stroke="#cc3333" strokeWidth="1"/>
         <text x={px(86.2)} y={py(58)} textAnchor="middle" fontSize="7" fontWeight="600" fill="#9a1111" fontFamily="Arial,sans-serif">Toilettes F</text>
         <text x={px(86.2)} y={py(61)} textAnchor="middle" fontSize="5.5" fill="#9a1111" fontFamily="Arial,sans-serif">13m²</text>
+        <ellipse cx={px(85.3)} cy={py(70)} rx={px(1.2)} ry={py(3.5)} fill="white" stroke="#cc5555" strokeWidth="0.8"/>
+        <ellipse cx={px(87.5)} cy={py(70)} rx={px(1.2)} ry={py(3.5)} fill="white" stroke="#cc5555" strokeWidth="0.8"/>
 
-        {/* Entrée / Sortie Laverie */}
+        {/* ── ENTRÉE / SORTIE LAVERIE ── */}
         <text x={px(38)} y={py(76.5)} fontSize="6" fill="#555" fontFamily="Arial,sans-serif">Entrée Laverie</text>
         <text x={px(38)} y={py(78.5)} fontSize="6" fill="#555" fontFamily="Arial,sans-serif">Sortie Laverie</text>
 
-        {/* Zones */}
+        {/* ── STAIRCASE ── */}
+        {[0,1,2,3].map(i => (
+          <rect key={i} x={px(86.8 + i * 0.25)} y={py(69 - i * 2)} width={px(0.9)} height={py(8 + i * 2)} fill="none" stroke="#aaa" strokeWidth="0.5"/>
+        ))}
+
+        {/* ── ZONES ── */}
         {ZONES.map(zone => {
           const zx = px(zone.x), zy = py(zone.y), zw = px(zone.width), zh = py(zone.height);
           const zonePointIds = zone.points.map(p => p.id);
+          const level = getZoneLevel(results, zonePointIds);
           const isSelected = selectedZone?.id === zone.id;
           const isHov = hovZone === zone.id;
-          const bz = byMapId[zone.id];
+          const bz = backendByMapId[zone.id];
 
-          // Color priority: uploaded file > backend data > grey
-          const hasUploadedData = zonePointIds.some(id => results.has(id));
-          let fill = GRAY_ZONE_FILL;
-          let strokeColor = isSelected ? '#0066cc' : GRAY_ZONE_STROKE;
-
-          if (hasUploadedData) {
-            const level = getZoneLevel(results, zonePointIds);
-            fill = ZONE_DATA_FILL[level];
-            if (!isSelected) strokeColor = level !== 'unknown' ? LEVEL_COLORS[level] : GRAY_ZONE_STROKE;
+          // ── Logique de couleur : bulletin importé > backend > gris ──
+          const hasUploadedForZone = zonePointIds.some(id => results.has(id));
+          let fill: string, stroke: string;
+          if (hasUploadedForZone && level !== 'unknown') {
+            fill   = ZONE_DATA_FILL[level];
+            stroke = isSelected ? '#0066cc' : LEVEL_COLORS[level];
           } else if (bz) {
-            fill = BACKEND_FILL[bz.status];
-            if (!isSelected) strokeColor = BACKEND_STROKE[bz.status];
+            fill   = BACKEND_FILL[bz.status];
+            stroke = isSelected ? '#0066cc' : BACKEND_STROKE[bz.status];
+          } else {
+            fill   = GRAY_ZONE_FILL;
+            stroke = isSelected ? '#0066cc' : GRAY_ZONE_STROKE;
           }
-
           const strokeW = isSelected ? 3 : isHov ? 2.5 : 1.5;
 
           return (
             <g key={zone.id}>
               <rect
                 x={zx} y={zy} width={zw} height={zh}
-                fill={fill} stroke={strokeColor} strokeWidth={strokeW}
+                fill={fill} stroke={stroke} strokeWidth={strokeW}
                 style={{ cursor: 'pointer' }}
-                onClick={() => {
-                  if (selectedZone?.id === zone.id) { onSelectZone(null); reset(); }
-                  else { onSelectZone(zone); zoomToZone(zone); }
-                }}
+                onClick={() => { if (selectedZone?.id === zone.id) { onSelectZone(null); reset(); } else { onSelectZone(zone); zoomToZone(zone); } }}
                 onMouseEnter={() => setHovZone(zone.id)}
                 onMouseLeave={() => setHovZone(null)}
               />
-              <text x={zx + zw / 2} y={zy + 13} textAnchor="middle" fontSize="9" fontWeight="700" fill="#1a3a5c" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none', userSelect: 'none' }}>
+
+              {/* Zone name */}
+              <text x={zx + zw / 2} y={zy + 13} textAnchor="middle" fontSize="9" fontWeight="700"
+                fill="#1a3a5c" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none', userSelect: 'none' }}>
                 {zone.name}
               </text>
               {zone.area && (
-                <text x={zx + zw / 2} y={zy + 22} textAnchor="middle" fontSize="7" fill="#1a3a5c" opacity="0.8" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none', userSelect: 'none' }}>
+                <text x={zx + zw / 2} y={zy + 22} textAnchor="middle" fontSize="7" fill="#1a3a5c" opacity="0.8"
+                  fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none', userSelect: 'none' }}>
                   {zone.area}
                 </text>
               )}
-              {/* UFC badge from backend */}
-              {bz && !hasUploadedData && (
-                <text x={zx + zw / 2} y={zy + zh / 2 + 4} textAnchor="middle" fontSize={zw < 100 ? '7' : '9'} fontWeight="700" fill="#1a3a5c" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none', userSelect: 'none' }}>
+
+              {/* UFC depuis le backend (quand pas de bulletin) */}
+              {bz && !hasUploadedForZone && zw >= 80 && zh >= 50 && (
+                <text x={zx + zw / 2} y={zy + zh / 2 + 4} textAnchor="middle"
+                  fontSize={zw < 120 ? '7' : '9'} fontWeight="700" fill="#1a3a5c"
+                  fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none', userSelect: 'none' }}>
                   {bz.ufc} UFC/cm²
                 </text>
               )}
+
               {/* Data badge top-right */}
-              {(hasUploadedData || bz) && (
+              {(hasUploadedForZone && level !== 'unknown') && (
                 <circle cx={zx + zw - 7} cy={zy + 7} r={4.5}
-                  fill={hasUploadedData ? LEVEL_COLORS[getZoneLevel(results, zonePointIds)] : BACKEND_STROKE[bz!.status]}
-                  stroke="white" strokeWidth="1.2" style={{ pointerEvents: 'none' }}/>
+                  fill={LEVEL_COLORS[level]} stroke="white" strokeWidth="1.2"
+                  style={{ pointerEvents: 'none' }}/>
               )}
-              {/* Sampling points */}
+              {bz && !hasUploadedForZone && (
+                <circle cx={zx + zw - 7} cy={zy + 7} r={4.5}
+                  fill={BACKEND_STROKE[bz.status]} stroke="white" strokeWidth="1.2"
+                  style={{ pointerEvents: 'none' }}/>
+              )}
+
+              {/* Sampling point dots */}
               {zone.points.map(pt => {
                 const ptResults = results.get(pt.id) ?? [];
                 const ptLevel = ptResults.length > 0 ? getPointOverallLevel(ptResults) : 'unknown';
@@ -210,6 +242,7 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
                 const ptx = px(pt.x), pty = py(pt.y);
                 const isHovP = hovPt === pt.id;
                 const r = isHovP ? 6.5 : 4.5;
+
                 return (
                   <g key={pt.id} style={{ cursor: 'pointer' }}
                     onClick={e => { e.stopPropagation(); onSelectPoint(pt, zone); }}
@@ -218,8 +251,10 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
                     <circle cx={ptx} cy={pty} r={r} fill={dotColor} stroke="white" strokeWidth="1.2"/>
                     {isHovP && (
                       <g>
-                        <rect x={ptx + 7} y={pty - 9} width={pt.label.length * 6.2 + 8} height={14} fill="rgba(0,0,0,0.75)" rx="3"/>
-                        <text x={ptx + 11} y={pty + 1.5} fontSize="8.5" fill="white" fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
+                        <rect x={ptx + 7} y={pty - 9} width={pt.label.length * 6.2 + 8} height={14}
+                          fill="rgba(0,0,0,0.75)" rx="3"/>
+                        <text x={ptx + 11} y={pty + 1.5} fontSize="8.5" fill="white"
+                          fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
                           {pt.label}
                         </text>
                       </g>
@@ -231,10 +266,12 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
           );
         })}
 
-        {/* Bottom labels */}
+        {/* ── BOTTOM LABELS ── */}
         <text x={px(50)} y={py(96)} textAnchor="middle" fontSize="9" fill="#555" fontFamily="Arial,sans-serif">← Entrée vestiaire →</text>
-        <text x={px(1.5)} y={py(87)} fontSize="6" fill="#888" fontFamily="Arial,sans-serif" transform={`rotate(-90,${px(1.5)},${py(87)})`}>chargement produits finis</text>
-        <text x={px(98.5)} y={py(89)} fontSize="6" fill="#888" fontFamily="Arial,sans-serif" transform={`rotate(90,${px(98.5)},${py(89)})`}>déchargement matières premières</text>
+        <text x={px(1.5)} y={py(87)} fontSize="6" fill="#888" fontFamily="Arial,sans-serif"
+          transform={`rotate(-90,${px(1.5)},${py(87)})`}>chargement produits finis</text>
+        <text x={px(98.5)} y={py(89)} fontSize="6" fill="#888" fontFamily="Arial,sans-serif"
+          transform={`rotate(90,${px(98.5)},${py(89)})`}>déchargement matières premières</text>
       </svg>
     </div>
   );

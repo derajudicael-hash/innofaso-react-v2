@@ -2,19 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { LabResult, ParameterType } from './labParser';
+import { FileEntry } from './FileSidebar';
 
-export interface FileEntry {
-  id: string;
-  name: string;
-  parameter: ParameterType;
-  count: number;
-  date: string;
-  weekNum: string;
-  reportRef: string;
-}
-
-const KEY_ENTRIES = 'innofaso_entries_v1';
-const KEY_RESULTS = 'innofaso_results_v1';
+const KEY_ENTRIES = 'hygienemap_entries_v2';
+const KEY_RESULTS = 'hygienemap_results_v2';
 
 function safeGet<T>(key: string, fallback: T): T {
   try {
@@ -34,6 +25,7 @@ export function usePersistedFiles() {
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([]);
   const [fileResults, setFileResults] = useState<Record<string, LabResult[]>>({});
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     const entries = safeGet<FileEntry[]>(KEY_ENTRIES, []);
@@ -45,6 +37,7 @@ export function usePersistedFiles() {
     }
     setFileEntries(entries);
     setFileResults(results);
+    setHydrated(true);
   }, []);
 
   const addFile = useCallback((results: LabResult[], name: string) => {
@@ -84,5 +77,5 @@ export function usePersistedFiles() {
     }
   }
 
-  return { fileEntries, activeFileId, activeResults, addFile, removeFile, clearAll, setActiveFileId };
+  return { fileEntries, activeFileId, activeResults, hydrated, addFile, removeFile, clearAll, setActiveFileId };
 }
