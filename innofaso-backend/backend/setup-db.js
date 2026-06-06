@@ -1,7 +1,15 @@
 const mysql = require("mysql2/promise");
 const fs    = require("fs");
 const path  = require("path");
-require("dotenv").config();
+
+const envPath     = path.join(__dirname, ".env");
+const envExample  = path.join(__dirname, ".env.example");
+if (!fs.existsSync(envPath) && fs.existsSync(envExample)) {
+  fs.copyFileSync(envExample, envPath);
+  console.log(".env créé automatiquement depuis .env.example");
+}
+
+require("dotenv").config({ path: envPath });
 
 async function setup() {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;

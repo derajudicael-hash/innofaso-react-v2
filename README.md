@@ -5,44 +5,37 @@ Plateforme de suivi qualité eau — Backend (Express) + Frontend (React/Vite) +
 ## Prérequis
 
 - [Node.js](https://nodejs.org/) v18+
-- [MySQL](https://www.mysql.com/) ou [XAMPP](https://www.apachefriends.org/) (phpMyAdmin)
+- [XAMPP](https://www.apachefriends.org/) (ou tout autre serveur MySQL)
 
 ## Installation et lancement
 
-### Étape 1 — Cloner le projet
+### Étape 1 — Cloner ou télécharger le projet
 
 ```bash
 git clone https://github.com/derajudicael-hash/innofaso-react-v2.git
 cd innofaso-react-v2
 ```
 
-### Étape 2 — Créer le fichier de configuration
+> Si tu as téléchargé le ZIP depuis GitHub, extrais-le et entre dans le dossier `innofaso-react-v2-main` à l'intérieur.
 
-```bash
-cp innofaso-backend/backend/.env.example innofaso-backend/backend/.env
-```
+### Étape 2 — Installer les dépendances et créer la base de données
 
-> Sur Windows :
-> ```
-> copy innofaso-backend\backend\.env.example innofaso-backend\backend\.env
-> ```
-
-**Si tu utilises XAMPP avec les paramètres par défaut, tu n'as rien d'autre à faire.**
-
-Sinon, ouvrir `innofaso-backend/backend/.env` et modifier uniquement `DB_PASSWORD` avec ton mot de passe MySQL.
-
-### Étape 3 — Installer les dépendances et créer la base de données
-
-> Vérifier que **MySQL / XAMPP est démarré** avant de lancer cette commande.
+> Vérifier que **XAMPP (MySQL) est démarré** avant de lancer cette commande.
 
 ```bash
 npm install
 npm run setup
 ```
 
-Cette commande installe les dépendances des 3 projets **et** crée automatiquement la base de données `innofaso` avec toutes ses tables.
+Cette commande :
+- installe les dépendances des 3 projets
+- crée automatiquement le fichier `.env`
+- crée la base de données `innofaso` avec toutes ses tables
 
-### Étape 4 — Lancer le projet
+> Par défaut la config MySQL est `root` sans mot de passe (paramètres XAMPP standard).
+> Si ta config est différente, ouvre `innofaso-backend/backend/.env` et modifie `DB_PASSWORD`.
+
+### Étape 3 — Lancer le projet
 
 ```bash
 npm run dev
