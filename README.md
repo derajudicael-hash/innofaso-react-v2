@@ -16,26 +16,24 @@ git clone <url-du-repo>
 cd innofaso-react-v2
 ```
 
-### 2. Installer toutes les dépendances
-
-```bash
-npm install
-npm run install:all
-```
-
-### 3. Configurer la base de données
-
-1. Ouvrir **phpMyAdmin** (ou MySQL)
-2. Créer une base de données nommée `innofaso`
-3. Importer le fichier `innofaso-backend/backend/database.sql`
-
-### 4. Configurer les variables d'environnement
+### 2. Configurer les variables d'environnement
 
 ```bash
 cp innofaso-backend/backend/.env.example innofaso-backend/backend/.env
 ```
 
-Ouvrir `.env` et renseigner ton mot de passe MySQL si nécessaire.
+Ouvrir `.env` et renseigner ton mot de passe MySQL si nécessaire (par défaut : root sans mot de passe).
+
+### 3. Installer les dépendances et créer la base de données
+
+> Vérifier que **MySQL / XAMPP est démarré** avant de lancer cette commande.
+
+```bash
+npm install
+npm run setup
+```
+
+Cette commande installe les dépendances des 3 projets **et** crée automatiquement la base de données `innofaso` avec toutes ses tables.
 
 ## Lancement
 
