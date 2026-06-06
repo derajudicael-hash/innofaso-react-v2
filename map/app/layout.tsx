@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "HygieneMap — Contrôle microbiologique",
+  title: "InnoFaso — Contrôle microbiologique",
   description: "Visualisation des prélèvements microbiologiques en usine",
 };
 
