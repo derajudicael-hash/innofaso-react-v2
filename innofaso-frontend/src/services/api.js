@@ -1,7 +1,7 @@
 // src/services/api.js
 // Central file for all backend calls
 
-const BASE = "http://localhost:4000/api";
+const BASE = "/api";
 
 // ── Token management ─────────────────────────
 export function getToken() {

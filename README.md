@@ -9,33 +9,37 @@ Plateforme de suivi qualité eau — Backend (Express) + Frontend (React/Vite) +
 
 ## Installation et lancement
 
-### Étape 1 — Cloner ou télécharger le projet
+> Vérifier que **XAMPP (MySQL) est démarré** avant de commencer.
+
+### 1. Cloner ou télécharger le projet
 
 ```bash
 git clone https://github.com/derajudicael-hash/innofaso-react-v2.git
 cd innofaso-react-v2
 ```
 
-> Si tu as téléchargé le ZIP depuis GitHub, extrais-le et entre dans le dossier `innofaso-react-v2-main` à l'intérieur.
+> Si tu as téléchargé le ZIP depuis GitHub : extraire, puis entrer dans le dossier `innofaso-react-v2-main` à l'intérieur.
 
-### Étape 2 — Installer les dépendances et créer la base de données
-
-> Vérifier que **XAMPP (MySQL) est démarré** avant de lancer cette commande.
+### 2. Installer les dépendances
 
 ```bash
 npm install
+```
+
+Installe automatiquement les dépendances des 3 projets (backend, frontend, map).
+
+### 3. Créer la base de données
+
+```bash
 npm run setup
 ```
 
-Cette commande :
-- installe les dépendances des 3 projets
-- crée automatiquement le fichier `.env`
-- crée la base de données `innofaso` avec toutes ses tables
+Crée automatiquement la base de données `innofaso` et toutes ses tables.
 
-> Par défaut la config MySQL est `root` sans mot de passe (paramètres XAMPP standard).
+> Configuration par défaut : MySQL `root` sans mot de passe (XAMPP standard).
 > Si ta config est différente, ouvre `innofaso-backend/backend/.env` et modifie `DB_PASSWORD`.
 
-### Étape 3 — Lancer le projet
+### 4. Lancer le projet
 
 ```bash
 npm run dev

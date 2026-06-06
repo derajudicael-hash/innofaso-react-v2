@@ -5,8 +5,12 @@ const cors    = require("cors");
 const app = express();
 
 // ── Middleware ────────────────────────────────
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "http://localhost:5173",
+  process.env.MAP_URL      || "http://localhost:3000",
+];
 app.use(cors({
-  origin:      process.env.FRONTEND_URL || "http://localhost:5173",
+  origin:      (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
   credentials: true,
 }));
 app.use(express.json());
