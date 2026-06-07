@@ -12,6 +12,7 @@ import CartoPage     from "./pages/CartoPage";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { AdminDataProvider }     from "./context/AdminDataContext";
+import { ThemeProvider }         from "./context/ThemeContext";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -86,10 +87,12 @@ function InnerApp() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AdminDataProvider>
-        <InnerApp />
-      </AdminDataProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AdminDataProvider>
+          <InnerApp />
+        </AdminDataProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

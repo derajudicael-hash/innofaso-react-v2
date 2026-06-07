@@ -149,7 +149,7 @@ export default function HistoryPage() {
             <StatBox
               label="Tendance"
               value={stats
-                ? (stats.trend > 0 ? "↑ +" : stats.trend < 0 ? "↓ " : "→ ") + Math.abs(stats.trend)
+                ? (stats.trend > 0 ? "+" : stats.trend < 0 ? "-" : "") + Math.abs(stats.trend)
                 : "—"}
               unit="UFC/cm²"
               colorClass={stats?.trend > 0 ? "red" : stats?.trend < 0 ? "green" : ""}

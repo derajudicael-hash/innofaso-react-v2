@@ -46,7 +46,7 @@ function StatusBadge({ status }) {
 
 function FlashMsg({ visible, text }) {
   if (!visible) return null;
-  return <span className="adm-flash-msg">✓ {text}</span>;
+  return <span className="adm-flash-msg">{text}</span>;
 }
 
 // ─── Hook: flash save feedback ───────────────
@@ -130,7 +130,7 @@ function ZonesTab() {
       {/* Add form */}
       {showAdd && (
         <div className="adm-add-card">
-          <div className="adm-add-card-title">➕ Nouvelle zone</div>
+          <div className="adm-add-card-title">Nouvelle zone</div>
           <div className="adm-form-grid">
             <Field label="Nom de la zone *">
               <Inp value={newZ.label} onChange={(v) => setNewZ((p) => ({ ...p, label: v }))} placeholder="ex : Zone Lavage" />
@@ -218,7 +218,7 @@ function ZonesTab() {
         <>
           <div className="adm-overlay" onClick={() => setConfirmDel(null)} />
           <div className="adm-confirm-modal">
-            <div className="adm-confirm-title">⚠️ Confirmer la suppression</div>
+            <div className="adm-confirm-title">Confirmer la suppression</div>
             <div className="adm-confirm-desc">
               Cette action est irréversible. La zone sera définitivement supprimée.
             </div>
@@ -266,8 +266,8 @@ function SeuilsTab() {
         {/* Critical */}
         <div className="adm-seuil-card seuil-red">
           <div className="adm-seuil-dot" style={{ background: "#ef4444" }} />
-          <div className="adm-seuil-label">Seuil Critique 🔴</div>
-          <div className="adm-seuil-desc">Au-dessus → action immédiate requise</div>
+          <div className="adm-seuil-label">Seuil Critique</div>
+          <div className="adm-seuil-desc">Au-dessus : action immédiate requise</div>
           <div className="adm-seuil-row">
             <input
               className="adm-seuil-input"
@@ -282,8 +282,8 @@ function SeuilsTab() {
         {/* Warning */}
         <div className="adm-seuil-card seuil-orange">
           <div className="adm-seuil-dot" style={{ background: "#f97316" }} />
-          <div className="adm-seuil-label">Seuil Surveillance 🟠</div>
-          <div className="adm-seuil-desc">Entre warning et critique → vigilance renforcée</div>
+          <div className="adm-seuil-label">Seuil Surveillance</div>
+          <div className="adm-seuil-desc">Entre warning et critique : vigilance renforcée</div>
           <div className="adm-seuil-row">
             <input
               className="adm-seuil-input"
@@ -298,7 +298,7 @@ function SeuilsTab() {
         {/* OK — readonly */}
         <div className="adm-seuil-card seuil-green">
           <div className="adm-seuil-dot" style={{ background: "#16a34a" }} />
-          <div className="adm-seuil-label">Zone Conforme 🟢</div>
+          <div className="adm-seuil-label">Zone Conforme</div>
           <div className="adm-seuil-desc">En dessous du seuil surveillance</div>
           <div className="adm-seuil-row">
             <input className="adm-seuil-input adm-input-ro" type="text" value={`< ${draft.warning}`} readOnly />
@@ -427,10 +427,10 @@ function CompteTab() {
 // ADMIN PAGE — orchestrator
 // ─────────────────────────────────────────────
 const TABS = [
-  { id: "zones",  icon: "🗺️",  label: "Zones" },
-  { id: "seuils", icon: "⚙️",  label: "Seuils" },
-  { id: "site",   icon: "🏭",  label: "Infos site" },
-  { id: "compte", icon: "👤",  label: "Mon compte" },
+  { id: "zones",  label: "Zones" },
+  { id: "seuils", label: "Seuils" },
+  { id: "site",   label: "Infos site" },
+  { id: "compte", label: "Mon compte" },
 ];
 
 export default function AdminPage() {
@@ -453,7 +453,13 @@ export default function AdminPage() {
       {/* ── Header ── */}
       <div className="adm-page-header">
         <div className="adm-page-header-left">
-          <div className="adm-page-header-icon">⚙</div>
+          <div className="adm-page-header-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.07 4.93A10 10 0 1 0 4.93 19.07"/>
+              <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+            </svg>
+          </div>
           <div>
             <div className="adm-page-header-title">Administration</div>
             <div className="adm-page-header-sub">
@@ -481,7 +487,6 @@ export default function AdminPage() {
             className={`adm-tab-pill${tab === t.id ? " adm-tab-pill--active" : ""}`}
             onClick={() => setTab(t.id)}
           >
-            <span>{t.icon}</span>
             {t.label}
           </button>
         ))}

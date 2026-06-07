@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useAdminData } from "../context/AdminDataContext";
+import { useTheme }     from "../context/ThemeContext";
 import { ZONES } from "../map/factoryData";
 
 const totalPoints = ZONES.reduce((acc, z) => acc + z.points.length, 0);
@@ -11,6 +12,12 @@ const PAGE_META = {
   settings:  { title: "Paramètres",       sub: "Configuration des seuils et informations du site" },
   admin:     { title: "Administration",   sub: "Gestion des zones, utilisateurs et données" },
 };
+
+const THEMES = [
+  { id: "blanc",      label: "Blanc" },
+  { id: "tbtrack",    label: "TB" },
+  { id: "industriel", label: "Ind." },
+];
 
 function CriticalBadge({ count }) {
   if (count === 0) return null;
@@ -24,6 +31,7 @@ function CriticalBadge({ count }) {
 
 export default function Topbar({ clock, activeNav }) {
   const { zones } = useAdminData();
+  const { theme, setTheme } = useTheme();
   const critCount = zones.filter((z) => z.status === "critical").length;
 
   const page = useMemo(() => {
@@ -48,8 +56,22 @@ export default function Topbar({ clock, activeNav }) {
       </div>
 
       <div className="topbar-right">
-        <span className="topbar-label">Actualisation</span>
-        <span className="topbar-clock">{clock}</span>
+        <div className="theme-switcher" title="Changer le thème">
+          {THEMES.map(t => (
+            <button
+              key={t.id}
+              className={`theme-btn${theme === t.id ? " theme-btn--active" : ""}`}
+              onClick={() => setTheme(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="topbar-clock-block">
+          <span className="topbar-label">Actualisation</span>
+          <span className="topbar-clock">{clock}</span>
+        </div>
       </div>
     </header>
   );

@@ -63,14 +63,6 @@ export default function DashboardPage() {
   const [tab,       setTab]       = useState("7j");
   const [openModal, setOpenModal] = useState(null);
 
-  if (loading) return (
-    <div className="dash-loading">
-      <div className="spinner" />
-      Chargement des données…
-    </div>
-  );
-  if (error) return <div className="dash-error">{error}</div>;
-
   const critThresh = thresholds?.critical ?? 50;
   const warnThresh = thresholds?.warning  ?? 40;
 
@@ -98,6 +90,14 @@ export default function DashboardPage() {
 
     return { critCount, warnCount, okCount, avgUfc, prevCritCount, prevWarnCount, prevOkCount, prevAvgUfc };
   }, [zones, critThresh, warnThresh]);
+
+  if (loading) return (
+    <div className="dash-loading">
+      <div className="spinner" />
+      Chargement des données…
+    </div>
+  );
+  if (error) return <div className="dash-error">{error}</div>;
 
   const { critCount, warnCount, okCount, avgUfc, prevCritCount, prevWarnCount, prevOkCount, prevAvgUfc } = kpiStats;
 
@@ -158,7 +158,7 @@ export default function DashboardPage() {
                 )}
                 {activeResults.size > 0 && (
                   <span style={{ fontSize: 10, color: 'var(--txt2)', background: 'var(--brand-bg)', border: '1px solid var(--brand-bd)', borderRadius: 6, padding: '2px 8px' }}>
-                    📋 Bulletin actif
+                    Bulletin actif
                   </span>
                 )}
               </div>

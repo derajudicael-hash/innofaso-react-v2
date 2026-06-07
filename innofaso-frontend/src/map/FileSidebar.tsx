@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ParameterType } from '../utils/labParser';
+import { ParameterType } from './labParser';
 
 export interface FileEntry {
   id: string;
@@ -45,7 +45,7 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
       {/* Header */}
       <div style={{ padding: '12px 12px 10px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
         <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>📂</span> Bulletins d'analyse
+          Bulletins d'analyse
         </div>
         <button onClick={onUpload} disabled={isLoading} style={{
           width: '100%', padding: '7px 0', borderRadius: 7,
@@ -54,7 +54,7 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
           border: 'none', cursor: isLoading ? 'default' : 'pointer',
           fontSize: 12, fontWeight: 700,
         }}>
-          {isLoading ? '⏳ Traitement…' : '+ Importer bulletin'}
+          {isLoading ? 'Traitement…' : '+ Importer bulletin'}
         </button>
         <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 4, textAlign: 'center' }}>
           .docx · .csv · .xlsx
@@ -65,7 +65,6 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
         {files.length === 0 ? (
           <div style={{ padding: '24px 14px', textAlign: 'center', color: '#94a3b8', fontSize: 11, lineHeight: 1.6 }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>🧫</div>
             Aucun bulletin.<br/>
             Importez vos fichiers<br/>
             <span style={{ color: '#cbd5e0', fontSize: 10 }}>Ils seront sauvegardés<br/>automatiquement</span>
@@ -118,7 +117,7 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
                 <div style={{ fontSize: 10, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#94a3b8', display: 'inline-block' }} />
                   {f.count} points
-                  <span style={{ marginLeft: 'auto', fontSize: 9, color: '#cbd5e0' }}>💾 sauvegardé</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 9, color: '#cbd5e0' }}>sauvegardé</span>
                 </div>
               </div>
             );
@@ -148,7 +147,7 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
         {files.length > 0 && (
           <button onClick={() => { if (confirm('Effacer tous les bulletins sauvegardés ?')) onClearAll(); }}
             style={{ marginTop: 8, width: '100%', padding: '5px 0', borderRadius: 6, border: '1px solid #fecaca', background: 'white', color: '#ef4444', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
-            🗑 Effacer tout
+            Effacer tout
           </button>
         )}
       </div>

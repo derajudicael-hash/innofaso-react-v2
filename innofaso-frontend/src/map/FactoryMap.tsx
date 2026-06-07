@@ -98,15 +98,20 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#f5f5f5' }}>
       {/* Zoom controls */}
       <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {[
+        {([
           { label: '+', onClick: () => { const nw = Math.max(100, vb.w * 0.75); const nh = Math.max(60, vb.h * 0.75); setView(vb.x + (vb.w - nw) / 2, vb.y + (vb.h - nh) / 2, nw, nh); } },
           { label: '−', onClick: () => { const nw = Math.min(VW * 2, vb.w * 1.33); const nh = Math.min(VH * 2, vb.h * 1.33); setView(vb.x - (nw - vb.w) / 2, vb.y - (nh - vb.h) / 2, nw, nh); } },
-          { label: '⌂', onClick: () => { onSelectZone(null); reset(); } },
-        ].map(({ label, onClick }) => (
+        ] as { label: string; onClick: () => void }[]).map(({ label, onClick }) => (
           <button key={label} onClick={onClick} style={{ width: 28, height: 28, borderRadius: 4, background: '#fff', border: '1px solid #ccc', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: '#444', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }}>
             {label}
           </button>
         ))}
+        <button onClick={() => { onSelectZone(null); reset(); }} title="Vue d'ensemble" style={{ width: 28, height: 28, borderRadius: 4, background: '#fff', border: '1px solid #ccc', cursor: 'pointer', color: '#444', boxShadow: '0 1px 3px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+        </button>
       </div>
 
       <svg
@@ -267,7 +272,7 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
         })}
 
         {/* ── BOTTOM LABELS ── */}
-        <text x={px(50)} y={py(96)} textAnchor="middle" fontSize="9" fill="#555" fontFamily="Arial,sans-serif">← Entrée vestiaire →</text>
+        <text x={px(50)} y={py(96)} textAnchor="middle" fontSize="9" fill="#555" fontFamily="Arial,sans-serif">Entree vestiaire</text>
         <text x={px(1.5)} y={py(87)} fontSize="6" fill="#888" fontFamily="Arial,sans-serif"
           transform={`rotate(-90,${px(1.5)},${py(87)})`}>chargement produits finis</text>
         <text x={px(98.5)} y={py(89)} fontSize="6" fill="#888" fontFamily="Arial,sans-serif"

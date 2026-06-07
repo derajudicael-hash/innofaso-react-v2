@@ -114,7 +114,7 @@ export default function LoginPage({ onBack }) {
 
         {/* Back */}
         <button className="login-back-btn" onClick={() => { setLoginError(""); onBack(); }}>
-          ← Retour au tableau de bord
+          Retour au tableau de bord
         </button>
 
 

@@ -26,11 +26,11 @@ function LevelBadge({ level }: { level: ResultLevel }) {
 }
 
 const ZONE_TYPE_LABEL: Record<string, string> = {
-  white: '🔵 Zone Blanche — Haut Risque',
-  grey: '🟢 Zone Grise — Faible Risque',
-  vestiaire: '🔴 Zone Rouge — Vestiaires',
-  laverie: '🟡 Zone Laverie',
-  external: '⚪ Zone Périphérique',
+  white: 'Zone Blanche — Haut Risque',
+  grey: 'Zone Grise — Faible Risque',
+  vestiaire: 'Zone Rouge — Vestiaires',
+  laverie: 'Zone Laverie',
+  external: 'Zone Périphérique',
 };
 const POINT_TYPE_DESC: Record<string, string> = {
   '1': '1.x.x — Surface en contact produit (seuil <10 UFC/cm²)',
@@ -66,8 +66,8 @@ function ResultBlock({ result }: { result: LabResult }) {
         )}
       </div>
       <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 11, color: '#94a3b8' }}>
-        {result.date && <span>📅 {result.date}</span>}
-        {result.method && <span>🔬 {result.method}</span>}
+        {result.date && <span>{result.date}</span>}
+        {result.method && <span>{result.method}</span>}
         {result.replicates > 1 && <span>×{result.replicates} réplicats</span>}
       </div>
       {result.reportRef && (
@@ -96,7 +96,7 @@ export default function Sidebar({ zone, point, results, backendZone, onClose, on
       <div style={s.header}>
         {point && (
           <button onClick={onBackToZone} style={{ fontSize: 12, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-            ← {zone.name}
+            &lt; {zone.name}
           </button>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -108,7 +108,7 @@ export default function Sidebar({ zone, point, results, backendZone, onClose, on
               {point ? POINT_TYPE_DESC[point.pointType] : ZONE_TYPE_LABEL[zone.category]}
             </p>
           </div>
-          <button onClick={onClose} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', color: '#64748b', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          <button onClick={onClose} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', color: '#64748b', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&times;</button>
         </div>
       </div>
 
@@ -204,7 +204,6 @@ export default function Sidebar({ zone, point, results, backendZone, onClose, on
               const ptR = results.get(point.id) || [];
               if (ptR.length === 0) return (
                 <div style={{ ...s.card, textAlign: 'center', padding: 24 }}>
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
                   <div style={{ fontSize: 13, color: '#64748b' }}>Aucun résultat pour ce point</div>
                   <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Importez un bulletin d'analyse</div>
                 </div>

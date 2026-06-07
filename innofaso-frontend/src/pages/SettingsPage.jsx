@@ -148,11 +148,11 @@ export default function SettingsPage() {
 
           <div className="settings-thresh-preview">
             <span className="status-badge ok">Conforme</span>
-            <span className="settings-thresh-arrow">→ 0–{Number(thresh.warning) - 1} UFC/cm²</span>
+            <span className="settings-thresh-arrow">0–{Number(thresh.warning) - 1} UFC/cm²</span>
             <span className="status-badge warning">Surveillance</span>
-            <span className="settings-thresh-arrow">→ {thresh.warning}–{Number(thresh.critical) - 1}</span>
+            <span className="settings-thresh-arrow">{thresh.warning}–{Number(thresh.critical) - 1}</span>
             <span className="status-badge critical">Critique</span>
-            <span className="settings-thresh-arrow">→ ≥ {thresh.critical}</span>
+            <span className="settings-thresh-arrow">&gt;= {thresh.critical}</span>
           </div>
 
           <FeedbackMsg msg={threshMsg} />
