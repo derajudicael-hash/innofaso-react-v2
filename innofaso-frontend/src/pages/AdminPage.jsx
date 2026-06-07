@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import Icon from "../components/Icon";
 
 // ─── Shared UI atoms ──────────────────────────
 function SectionTitle({ children }) {
@@ -194,16 +195,16 @@ function ZonesTab() {
                   <div className="adm-zone-view-meta">
                     <StatusBadge status={z.status} />
                     <span className="adm-zone-ufc">{z.ufc} UFC/cm²</span>
-                    <span className="adm-zone-resp">👤 {z.responsible}</span>
-                    <span className="adm-zone-check">📅 {z.lastCheck}</span>
+                    <span className="adm-zone-resp"><Icon name="user" size={11} strokeWidth={2} /> {z.responsible}</span>
+                    <span className="adm-zone-check"><Icon name="calendar" size={11} strokeWidth={2} /> {z.lastCheck}</span>
                   </div>
                 </div>
                 <div className="adm-zone-view-actions">
                   <button className="btn-edit" onClick={() => startEdit(z)}>
-                    ✏️ Modifier
+                    <Icon name="edit" size={13} strokeWidth={2} /> Modifier
                   </button>
                   <button className="btn-delete" onClick={() => setConfirmDel(z.id)}>
-                    🗑 Supprimer
+                    <Icon name="trash" size={13} strokeWidth={2} /> Supprimer
                   </button>
                 </div>
               </div>

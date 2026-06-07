@@ -1,5 +1,4 @@
 import { useRef, useEffect, useCallback } from "react";
-import { LABELS_7J } from "../data/zones";
 
 // ─────────────────────────────────────────────
 // BUILD DATASET FROM TAB SELECTION
@@ -120,7 +119,7 @@ function drawChart(canvas, history, tab, seuil = 50) {
 
     ctx.beginPath();
     ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = data[i] >= 50 ? "#bf3b2e" : "#1a6fa3";
+    ctx.fillStyle = data[i] >= (seuil ?? 50) ? "#bf3b2e" : "#1a6fa3";
     ctx.fill();
 
     ctx.fillStyle = "#9ca3af";

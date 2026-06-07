@@ -42,6 +42,10 @@ export default function SettingsPage() {
   const saveThresholds = async () => {
     const w = Number(thresh.warning);
     const c = Number(thresh.critical);
+    if (!Number.isFinite(w) || !Number.isFinite(c) || w < 1 || c < 1) {
+      setThreshMsg({ ok: false, text: "Les seuils doivent être des nombres entiers positifs." });
+      return;
+    }
     if (w >= c) {
       setThreshMsg({ ok: false, text: "Le seuil Surveillance doit être strictement inférieur au seuil Critique." });
       return;

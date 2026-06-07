@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAdminData }      from "../context/AdminDataContext";
 import { usePersistedFiles } from "../map/usePersistedFiles";
 import KpiCard       from "../components/KpiCard";
@@ -74,27 +74,32 @@ export default function DashboardPage() {
   const critThresh = thresholds?.critical ?? 50;
   const warnThresh = thresholds?.warning  ?? 40;
 
-  // KPI counts
-  const critCount = zones.filter(z => z.status === "critical").length;
-  const warnCount = zones.filter(z => z.status === "warning").length;
-  const okCount   = zones.filter(z => z.status === "ok").length;
-  const avgUfc    = zones.length ? Math.round(zones.reduce((a, z) => a + z.ufc, 0) / zones.length) : 0;
+  const kpiStats = useMemo(() => {
+    const critCount = zones.filter(z => z.status === "critical").length;
+    const warnCount = zones.filter(z => z.status === "warning").length;
+    const okCount   = zones.filter(z => z.status === "ok").length;
+    const avgUfc    = zones.length ? Math.round(zones.reduce((a, z) => a + z.ufc, 0) / zones.length) : 0;
 
-  const prevCritCount = zones.filter(z => {
-    const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
-    return prev >= critThresh;
-  }).length;
-  const prevWarnCount = zones.filter(z => {
-    const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
-    return prev >= warnThresh && prev < critThresh;
-  }).length;
-  const prevOkCount = zones.length - prevCritCount - prevWarnCount;
-  const prevAvgUfc  = zones.length
-    ? Math.round(zones.reduce((a, z) => {
-        const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
-        return a + prev;
-      }, 0) / zones.length)
-    : 0;
+    const prevCritCount = zones.filter(z => {
+      const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
+      return prev >= critThresh;
+    }).length;
+    const prevWarnCount = zones.filter(z => {
+      const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
+      return prev >= warnThresh && prev < critThresh;
+    }).length;
+    const prevOkCount = zones.length - prevCritCount - prevWarnCount;
+    const prevAvgUfc  = zones.length
+      ? Math.round(zones.reduce((a, z) => {
+          const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
+          return a + prev;
+        }, 0) / zones.length)
+      : 0;
+
+    return { critCount, warnCount, okCount, avgUfc, prevCritCount, prevWarnCount, prevOkCount, prevAvgUfc };
+  }, [zones, critThresh, warnThresh]);
+
+  const { critCount, warnCount, okCount, avgUfc, prevCritCount, prevWarnCount, prevOkCount, prevAvgUfc } = kpiStats;
 
   const kpis = [
     { key: "critical", label: "Alertes critiques",     value: critCount, sub: "Zones en alerte",           iconName: "alert", iconClass: "ic-red",    valueClass: "v-red",    delay: "0.05s", cardCls: "kpi-crit", trend: critCount - prevCritCount, trendIsGood: false },

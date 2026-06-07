@@ -85,13 +85,6 @@ export const NAV_ITEMS = [
   { id: "settings",  label: "Paramètres",      icon: "settings", spacer: true },
 ];
 
-// ─────────────────────────────────────────────
-// CHART LABELS
-// ─────────────────────────────────────────────
-export const LABELS_7J = [
-  "18 avr", "19 avr", "20 avr", "21 avr", "22 avr", "23 avr", "24 avr",
-];
-
 export const MAP_LEGEND = [
   { color: "#16a34a", label: "Conforme" },
   { color: "#f97316", label: "Surveillance" },

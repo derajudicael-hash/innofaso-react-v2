@@ -153,10 +153,11 @@ router.put("/:id", auth, requireAdmin, async (req, res) => {
       ]
     );
 
-    // Record history point
+    // Record history point + purge > 90 jours
+    await db.query("INSERT INTO zone_history (zone_id, ufc) VALUES (?, ?)", [id, numUfc]);
     await db.query(
-      "INSERT INTO zone_history (zone_id, ufc) VALUES (?, ?)",
-      [id, numUfc]
+      "DELETE FROM zone_history WHERE zone_id = ? AND recorded_at < DATE_SUB(NOW(), INTERVAL 90 DAY)",
+      [id]
     );
 
     // Return updated zone with history
