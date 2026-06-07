@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useAdminData } from "../context/AdminDataContext";
-import KpiCard      from "../components/KpiCard";
-import ChartSection from "../components/ChartSection";
-import FactoryMapSVG from "../components/FactoryMapSVG";
-import DetailPanel  from "../components/DetailPanel";
-import KpiModal     from "../components/KpiModal";
+import { useAdminData }      from "../context/AdminDataContext";
+import { usePersistedFiles } from "../map/usePersistedFiles";
+import KpiCard       from "../components/KpiCard";
+import ChartSection  from "../components/ChartSection";
+import KpiModal      from "../components/KpiModal";
+import FactoryMap    from "../map/FactoryMap";
+import Sidebar       from "../map/Sidebar";
 
 export const KPI_DETAILS = {
   critical: {
@@ -55,7 +56,10 @@ export const KPI_DETAILS = {
 
 export default function DashboardPage() {
   const { zones, loading, error, thresholds } = useAdminData();
-  const [selectedZoneId, setSelectedZoneId] = useState(null);
+  const { activeResults } = usePersistedFiles();
+
+  const [selectedMapZone, setSelectedMapZone] = useState(null);
+  const [selectedPoint,   setSelectedPoint]   = useState(null);
   const [tab,       setTab]       = useState("7j");
   const [openModal, setOpenModal] = useState(null);
 
@@ -70,30 +74,22 @@ export default function DashboardPage() {
   const critThresh = thresholds?.critical ?? 50;
   const warnThresh = thresholds?.warning  ?? 40;
 
-  const selectedId   = selectedZoneId ?? zones[0]?.id ?? null;
-  const selectedZone = zones.find((z) => z.id === selectedId) ?? zones[0];
+  // KPI counts
+  const critCount = zones.filter(z => z.status === "critical").length;
+  const warnCount = zones.filter(z => z.status === "warning").length;
+  const okCount   = zones.filter(z => z.status === "ok").length;
+  const avgUfc    = zones.length ? Math.round(zones.reduce((a, z) => a + z.ufc, 0) / zones.length) : 0;
 
-  // Counts actuels
-  const critCount = zones.filter((z) => z.status === "critical").length;
-  const warnCount = zones.filter((z) => z.status === "warning").length;
-  const okCount   = zones.filter((z) => z.status === "ok").length;
-  const avgUfc    = zones.length
-    ? Math.round(zones.reduce((a, z) => a + z.ufc, 0) / zones.length)
-    : 0;
-
-  // Counts période précédente (avant-dernier point d'historique)
-  const prevCritCount = zones.filter((z) => {
+  const prevCritCount = zones.filter(z => {
     const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
     return prev >= critThresh;
   }).length;
-
-  const prevWarnCount = zones.filter((z) => {
+  const prevWarnCount = zones.filter(z => {
     const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
     return prev >= warnThresh && prev < critThresh;
   }).length;
-
-  const prevOkCount  = zones.length - prevCritCount - prevWarnCount;
-  const prevAvgUfc   = zones.length
+  const prevOkCount = zones.length - prevCritCount - prevWarnCount;
+  const prevAvgUfc  = zones.length
     ? Math.round(zones.reduce((a, z) => {
         const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
         return a + prev;
@@ -101,31 +97,26 @@ export default function DashboardPage() {
     : 0;
 
   const kpis = [
-    {
-      key: "critical", label: "Alertes critiques",     value: critCount,
-      sub: "Zones en alerte",           iconName: "alert", iconClass: "ic-red",
-      valueClass: "v-red",    delay: "0.05s", cardCls: "kpi-crit",
-      trend: critCount - prevCritCount, trendIsGood: false,
-    },
-    {
-      key: "warning",  label: "Zones en surveillance", value: warnCount,
-      sub: "Niveau d'attention requis", iconName: "trend", iconClass: "ic-orange",
-      valueClass: "v-orange", delay: "0.10s", cardCls: "kpi-warn",
-      trend: warnCount - prevWarnCount, trendIsGood: false,
-    },
-    {
-      key: "ok",       label: "Zones conformes",       value: okCount,
-      sub: "Niveaux normaux",           iconName: "check", iconClass: "ic-green",
-      valueClass: "v-green",  delay: "0.15s", cardCls: "kpi-ok",
-      trend: okCount - prevOkCount,     trendIsGood: true,
-    },
-    {
-      key: "avg",      label: "Contamination moyenne", value: avgUfc,
-      sub: "UFC/cm² · toutes zones",   iconName: "down",  iconClass: "ic-gray",
-      valueClass: "v-dark",   delay: "0.20s", cardCls: "kpi-avg",
-      trend: avgUfc - prevAvgUfc,       trendIsGood: false,
-    },
+    { key: "critical", label: "Alertes critiques",     value: critCount, sub: "Zones en alerte",           iconName: "alert", iconClass: "ic-red",    valueClass: "v-red",    delay: "0.05s", cardCls: "kpi-crit", trend: critCount - prevCritCount, trendIsGood: false },
+    { key: "warning",  label: "Zones en surveillance", value: warnCount, sub: "Niveau d'attention requis", iconName: "trend", iconClass: "ic-orange",  valueClass: "v-orange", delay: "0.10s", cardCls: "kpi-warn", trend: warnCount - prevWarnCount, trendIsGood: false },
+    { key: "ok",       label: "Zones conformes",       value: okCount,   sub: "Niveaux normaux",           iconName: "check", iconClass: "ic-green",   valueClass: "v-green",  delay: "0.15s", cardCls: "kpi-ok",   trend: okCount - prevOkCount,     trendIsGood: true  },
+    { key: "avg",      label: "Contamination moyenne", value: avgUfc,    sub: "UFC/cm² · toutes zones",   iconName: "down",  iconClass: "ic-gray",    valueClass: "v-dark",   delay: "0.20s", cardCls: "kpi-avg",  trend: avgUfc - prevAvgUfc,       trendIsGood: false },
   ];
+
+  // Zones pour FactoryMap (mapId = id de zone factory-hygiene)
+  const backendZones = zones.filter(z => z.mapId).map(z => ({
+    id: z.id, mapId: z.mapId, status: z.status, ufc: z.ufc, seuil: z.seuil, label: z.label,
+  }));
+
+  // Zone backend correspondant à la zone de la carte sélectionnée
+  const activeBackendZone = selectedMapZone
+    ? backendZones.find(bz => bz.mapId === selectedMapZone.id)
+    : undefined;
+
+  // Zone backend pour ChartSection (backend zone object, pas factory zone)
+  const chartZone = activeBackendZone
+    ? zones.find(z => z.id === activeBackendZone.id)
+    : zones[0];
 
   return (
     <>
@@ -139,20 +130,69 @@ export default function DashboardPage() {
       )}
 
       <div className="dashboard-grid">
+        {/* KPI row */}
         <div className="kpi-row">
           {kpis.map(({ key, ...rest }) => (
             <KpiCard key={key} {...rest} onIconClick={() => setOpenModal(key)} />
           ))}
         </div>
 
+        {/* Carte + panneau droit */}
         <div className="dash-main">
+          {/* Carte interactive (zip FactoryMap — toutes fonctionnalités) */}
           <div className="dash-map">
-            <FactoryMapSVG zones={zones} selectedId={selectedId} onSelect={setSelectedZoneId} />
+            <div className="panel map-panel" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+              <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Cartographie de l'usine</span>
+                {selectedMapZone && (
+                  <button
+                    onClick={() => { setSelectedMapZone(null); setSelectedPoint(null); }}
+                    style={{ fontSize: 11, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                    Vue globale
+                  </button>
+                )}
+                {activeResults.size > 0 && (
+                  <span style={{ fontSize: 10, color: 'var(--txt2)', background: 'var(--brand-bg)', border: '1px solid var(--brand-bd)', borderRadius: 6, padding: '2px 8px' }}>
+                    📋 Bulletin actif
+                  </span>
+                )}
+              </div>
+              <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                <FactoryMap
+                  results={activeResults}
+                  backendZones={backendZones}
+                  selectedZone={selectedMapZone}
+                  onSelectZone={zone => { setSelectedMapZone(zone); setSelectedPoint(null); }}
+                  onSelectPoint={(pt, zone) => { setSelectedMapZone(zone); setSelectedPoint(pt); }}
+                />
+              </div>
+            </div>
           </div>
+
+          {/* Panneau droit */}
           <div className="dash-side">
-            {selectedZone && <DetailPanel zone={selectedZone} />}
-            {selectedZone && (
-              <ChartSection zone={selectedZone} tab={tab} setTab={setTab} />
+            {selectedMapZone ? (
+              <>
+                {/* Sidebar du zip avec données backend + bulletin */}
+                <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex' }}>
+                  <Sidebar
+                    zone={selectedMapZone}
+                    point={selectedPoint}
+                    results={activeResults}
+                    backendZone={activeBackendZone}
+                    onClose={() => { setSelectedMapZone(null); setSelectedPoint(null); }}
+                    onSelectPoint={pt => setSelectedPoint(pt)}
+                    onBackToZone={() => setSelectedPoint(null)}
+                  />
+                </div>
+                {/* Graphique historique pour la zone sélectionnée */}
+                {chartZone && (
+                  <ChartSection zone={chartZone} tab={tab} setTab={setTab} />
+                )}
+              </>
+            ) : (
+              /* Pas de zone sélectionnée → graphique global première zone */
+              zones[0] && <ChartSection zone={zones[0]} tab={tab} setTab={setTab} />
             )}
           </div>
         </div>
