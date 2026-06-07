@@ -117,12 +117,6 @@ export default function LoginPage({ onBack }) {
           ← Retour au tableau de bord
         </button>
 
-        {/* Demo hint */}
-        <div className="login-hint-box">
-          <div className="login-hint-title">Comptes de démonstration</div>
-          <div className="login-hint-row"><code>admin</code> / <code>Admin2026!</code> → Super Admin</div>
-          <div className="login-hint-row"><code>qualite</code> / <code>Qualite123!</code> → Éditeur</div>
-        </div>
 
       </div>
     </div>

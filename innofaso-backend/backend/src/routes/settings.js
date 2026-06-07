@@ -1,6 +1,7 @@
 const express = require("express");
 const db      = require("../db");
-const auth    = require("../middleware/auth");
+const auth             = require("../middleware/auth");
+const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ router.get("/thresholds", async (req, res) => {
 // ─────────────────────────────────────────────
 // PUT /api/settings/thresholds  (admin)
 // ─────────────────────────────────────────────
-router.put("/thresholds", auth, async (req, res) => {
+router.put("/thresholds", auth, requireAdmin, async (req, res) => {
   const { critical, warning } = req.body;
   if (Number(warning) >= Number(critical)) {
     return res.status(400).json({ error: "Le seuil warning doit être inférieur au seuil critique." });
@@ -54,7 +55,7 @@ router.get("/site", async (req, res) => {
 // ─────────────────────────────────────────────
 // PUT /api/settings/site  (admin)
 // ─────────────────────────────────────────────
-router.put("/site", auth, async (req, res) => {
+router.put("/site", auth, requireAdmin, async (req, res) => {
   const fields = ["name", "city", "country", "contact", "phone"];
   try {
     for (const key of fields) {

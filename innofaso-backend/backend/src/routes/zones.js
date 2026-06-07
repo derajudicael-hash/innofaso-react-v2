@@ -1,6 +1,7 @@
 const express = require("express");
 const db      = require("../db");
-const auth    = require("../middleware/auth");
+const auth            = require("../middleware/auth");
+const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -19,21 +20,10 @@ const ALERT_MAP = {
 };
 
 // ─────────────────────────────────────────────
-// HELPER — get last 7 history points for one zone
-// ─────────────────────────────────────────────
-async function getHistory(zoneId) {
-  const [rows] = await db.query(
-    "SELECT ufc FROM zone_history WHERE zone_id = ? ORDER BY id DESC LIMIT 7",
-    [zoneId]
-  );
-  return rows.map((r) => Number(r.ufc)).reverse();
-}
-
-// ─────────────────────────────────────────────
 // HELPER — format a DB row to frontend shape
 // ─────────────────────────────────────────────
-async function formatZone(z) {
-  const history = await getHistory(z.id);
+function formatZone(z, historyByZone) {
+  const history = historyByZone[z.id] || [Number(z.ufc)];
   return {
     id:          String(z.id),
     mapId:       z.map_id || null,
@@ -47,21 +37,39 @@ async function formatZone(z) {
     alertCls:    z.alert_cls,
     alertTitle:  z.alert_title,
     alertDesc:   z.alert_desc,
-    history:     history.length > 0 ? history : [Number(z.ufc)],
+    history,
   };
 }
 
 // ─────────────────────────────────────────────
-// GET /api/zones
+// GET /api/zones — 2 requêtes au lieu de N+1
 // ─────────────────────────────────────────────
 router.get("/", async (req, res) => {
   try {
     const [zones] = await db.query("SELECT * FROM zones ORDER BY id ASC");
-    const result = [];
-    for (const z of zones) {
-      result.push(await formatZone(z));
-    }
-    res.json(result);
+    if (zones.length === 0) return res.json([]);
+
+    // Une seule requête pour tout l'historique
+    const ids = zones.map(z => z.id);
+    const placeholders = ids.map(() => "?").join(",");
+    const [allHistory] = await db.query(
+      `SELECT zone_id, ufc FROM zone_history
+       WHERE zone_id IN (${placeholders})
+       ORDER BY zone_id ASC, id DESC`,
+      ids
+    );
+
+    // Grouper les 7 derniers points par zone (ordre chronologique)
+    const historyByZone = {};
+    allHistory.forEach(h => {
+      if (!historyByZone[h.zone_id]) historyByZone[h.zone_id] = [];
+      if (historyByZone[h.zone_id].length < 7) {
+        historyByZone[h.zone_id].push(Number(h.ufc));
+      }
+    });
+    Object.keys(historyByZone).forEach(id => historyByZone[id].reverse());
+
+    res.json(zones.map(z => formatZone(z, historyByZone)));
   } catch (err) {
     console.error("GET /zones error:", err);
     res.status(500).json({ error: "Erreur serveur." });
@@ -71,7 +79,7 @@ router.get("/", async (req, res) => {
 // ─────────────────────────────────────────────
 // POST /api/zones  — créer une zone (admin)
 // ─────────────────────────────────────────────
-router.post("/", auth, async (req, res) => {
+router.post("/", auth, requireAdmin, async (req, res) => {
   const { label, ufc, seuil, responsible, lastCheck, nextCheck, mapId } = req.body;
   if (!label || ufc === undefined) {
     return res.status(400).json({ error: "label et ufc sont requis." });
@@ -122,7 +130,7 @@ router.post("/", auth, async (req, res) => {
 // ─────────────────────────────────────────────
 // PUT /api/zones/:id  — modifier une zone (admin)
 // ─────────────────────────────────────────────
-router.put("/:id", auth, async (req, res) => {
+router.put("/:id", auth, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { label, ufc, seuil, responsible, lastCheck, nextCheck } = req.body;
 
@@ -177,7 +185,7 @@ router.put("/:id", auth, async (req, res) => {
 // ─────────────────────────────────────────────
 // DELETE /api/zones/:id  — supprimer une zone (admin)
 // ─────────────────────────────────────────────
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, requireAdmin, async (req, res) => {
   try {
     await db.query("DELETE FROM zones WHERE id = ?", [req.params.id]);
     res.json({ message: "Zone supprimée." });

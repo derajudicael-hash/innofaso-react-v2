@@ -1,6 +1,6 @@
 const jwt = require("jsonwebtoken");
 
-module.exports = function authMiddleware(req, res, next) {
+function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Token manquant." });
@@ -14,4 +14,14 @@ module.exports = function authMiddleware(req, res, next) {
   } catch {
     return res.status(401).json({ error: "Token invalide ou expiré." });
   }
-};
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== "superadmin") {
+    return res.status(403).json({ error: "Accès réservé au super administrateur." });
+  }
+  next();
+}
+
+module.exports = authMiddleware;
+module.exports.requireAdmin = requireAdmin;

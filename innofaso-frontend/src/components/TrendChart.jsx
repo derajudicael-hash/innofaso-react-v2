@@ -5,26 +5,39 @@ import { LABELS_7J } from "../data/zones";
 // BUILD DATASET FROM TAB SELECTION
 // ─────────────────────────────────────────────
 function buildDataset(history, tab) {
-  if (tab === "7j") return { labels: LABELS_7J, data: history };
+  const count = history.length;
+  const now   = new Date();
 
-  const len = tab === "30j" ? 30 : 90;
+  // Génère une label de date à partir d'aujourd'hui - daysAgo jours
+  const dateLabel = (daysAgo) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - daysAgo);
+    return `${d.getDate()}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
 
-  const data = Array.from({ length: len }, (_, i) =>
-    Math.round(history[i % 7] * (0.8 + Math.random() * 0.4))
+  if (tab === "7j") {
+    const labels = Array.from({ length: count }, (_, i) =>
+      dateLabel(count - 1 - i)
+    );
+    return { labels, data: history };
+  }
+
+  // 30j / 90j : on espace les points réels sur la plage demandée
+  // Pas de données inventées — on affiche ce qu'on a réellement
+  const span = tab === "30j" ? 30 : 90;
+  const step = count > 1 ? Math.floor(span / (count - 1)) : span;
+
+  const labels = Array.from({ length: count }, (_, i) =>
+    dateLabel(span - i * step)
   );
 
-  const labels = Array.from({ length: len }, (_, i) => {
-    const d = new Date(2026, 3, 24 - (len - 1) + i);
-    return `${d.getDate()}/${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
-
-  return { labels, data };
+  return { labels, data: history };
 }
 
 // ─────────────────────────────────────────────
 // DRAW FUNCTION (pure canvas)
 // ─────────────────────────────────────────────
-function drawChart(canvas, history, tab) {
+function drawChart(canvas, history, tab, seuil = 50) {
   const wrap = canvas.parentElement;
   canvas.width  = wrap.clientWidth;
   canvas.height = wrap.clientHeight;
@@ -55,20 +68,22 @@ function drawChart(canvas, history, tab) {
     ctx.fillText(Math.round(minVal + (maxVal - minVal) * t), pad.left - 6, y + 4);
   });
 
-  // Threshold line at 50 UFC
-  const ty = pad.top + H * (1 - (50 - minVal) / (maxVal - minVal));
-  ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = "#bf3b2e";
-  ctx.lineWidth   = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(pad.left, ty);
-  ctx.lineTo(pad.left + W, ty);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle  = "#bf3b2e";
-  ctx.font       = "10px 'DM Sans', sans-serif";
-  ctx.textAlign  = "left";
-  ctx.fillText("Seuil 50", pad.left + 4, ty - 5);
+  // Threshold line (seuil dynamique de la zone)
+  if (seuil >= minVal && seuil <= maxVal) {
+    const ty = pad.top + H * (1 - (seuil - minVal) / (maxVal - minVal));
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "#bf3b2e";
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, ty);
+    ctx.lineTo(pad.left + W, ty);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#bf3b2e";
+    ctx.font      = "10px 'DM Sans', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(`Seuil ${seuil}`, pad.left + 4, ty - 5);
+  }
 
   // Data points
   const pts = data.map((v, i) => ({
@@ -118,12 +133,12 @@ function drawChart(canvas, history, tab) {
 // ─────────────────────────────────────────────
 // TREND CHART COMPONENT
 // ─────────────────────────────────────────────
-export default function TrendChart({ history, tab }) {
+export default function TrendChart({ history, tab, seuil }) {
   const canvasRef = useRef(null);
 
   const redraw = useCallback(() => {
-    if (canvasRef.current) drawChart(canvasRef.current, history, tab);
-  }, [history, tab]);
+    if (canvasRef.current) drawChart(canvasRef.current, history, tab, seuil);
+  }, [history, tab, seuil]);
 
   // Redraw when data/tab changes
   useEffect(() => {
