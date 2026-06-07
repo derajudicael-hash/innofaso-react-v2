@@ -4,7 +4,6 @@ import TrendChart from "../components/TrendChart";
 import Icon from "../components/Icon";
 
 const TABS = ["7j", "30j", "90j"];
-const HIST_LABELS = ["19/05", "20/05", "21/05", "22/05", "23/05", "24/05", "25/05"];
 
 function statusOf(ufc, seuil) {
   if (ufc >= seuil)        return "critical";
@@ -13,6 +12,13 @@ function statusOf(ufc, seuil) {
 }
 
 const STATUS_LABEL = { critical: "Critique", warning: "Surveillance", ok: "Conforme" };
+
+// Génère un label "JJ/MM" pour une date passée de N jours
+function dateLabel(daysAgo) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 function StatBox({ label, value, unit, colorClass }) {
   return (
@@ -39,6 +45,12 @@ export default function HistoryPage() {
   const history = zone?.history || [];
   const seuil   = zone?.seuil ?? 50;
 
+  // Dates réelles pour chaque relevé (aujourd'hui - N jours)
+  const dateLabels = useMemo(() =>
+    history.map((_, i) => dateLabel(history.length - 1 - i)),
+    [history]
+  );
+
   const stats = useMemo(() => {
     if (!history.length) return null;
     const avg   = Math.round(history.reduce((s, v) => s + v, 0) / history.length);
@@ -47,6 +59,24 @@ export default function HistoryPage() {
     const trend = history.length >= 2 ? history[history.length - 1] - history[0] : 0;
     return { avg, max, min, trend };
   }, [history]);
+
+  const handleExportCSV = () => {
+    if (!zone || !history.length) return;
+    const headers = ["Date", "UFC/cm²", "Seuil", "Statut", "Marge"];
+    const rows = history.map((ufc, i) => {
+      const st    = statusOf(ufc, seuil);
+      const marge = seuil - ufc;
+      return [dateLabels[i], ufc, seuil, STATUS_LABEL[st], (marge > 0 ? "+" : "") + marge];
+    });
+    const csv  = [headers, ...rows].map(r => r.join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `innofaso_${zone.label.replace(/\s+/g, "_")}_${dateLabel(0).replace("/", "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) return (
     <div className="dash-loading">
@@ -60,25 +90,24 @@ export default function HistoryPage() {
       <div className="history-page-header">
         <div>
           <div className="page-title">Historique des contrôles</div>
-          <div className="page-sub">Évolution des niveaux UFC/cm² par zone · 7 derniers relevés</div>
+          <div className="page-sub">Évolution des niveaux UFC/cm² par zone · {history.length} derniers relevés</div>
         </div>
-        <button className="history-export-btn" title="Fonctionnalité à venir">
+        <button className="history-export-btn" onClick={handleExportCSV} disabled={!zone || !history.length}>
           <Icon name="download" size={14} strokeWidth={2} />
           Exporter CSV
         </button>
       </div>
 
-      {/* ── Sélecteur + Onglets ── */}
+      {/* Sélecteur + Onglets */}
       <div className="history-controls">
         <select
           className="history-zone-select"
           value={zone?.id || ""}
           onChange={(e) => setSelectedId(e.target.value)}
         >
+          <option value="" disabled>— Sélectionner une zone —</option>
           {zones.map((z) => (
-            <option key={z.id} value={z.id}>
-              {z.label}
-            </option>
+            <option key={z.id} value={z.id}>{z.label}</option>
           ))}
         </select>
 
@@ -97,10 +126,10 @@ export default function HistoryPage() {
 
       {zone ? (
         <>
-          {/* ── Stats ── */}
+          {/* Stats */}
           <div className="history-stats">
             <StatBox
-              label="Moyenne 7j"
+              label="Moyenne"
               value={stats?.avg ?? "—"}
               unit="UFC/cm²"
               colorClass={stats?.avg >= seuil ? "red" : stats?.avg >= seuil * 0.8 ? "orange" : ""}
@@ -118,7 +147,7 @@ export default function HistoryPage() {
               colorClass=""
             />
             <StatBox
-              label="Tendance 7j"
+              label="Tendance"
               value={stats
                 ? (stats.trend > 0 ? "↑ +" : stats.trend < 0 ? "↓ " : "→ ") + Math.abs(stats.trend)
                 : "—"}
@@ -127,18 +156,18 @@ export default function HistoryPage() {
             />
           </div>
 
-          {/* ── Graphique ── */}
+          {/* Graphique */}
           <div className="panel history-chart-panel">
             <div className="panel-header">{zone.label} — Évolution UFC/cm²</div>
             <div className="history-chart-wrap">
-              <TrendChart history={history} tab={tab} />
+              <TrendChart history={history} tab={tab} seuil={seuil} />
             </div>
           </div>
 
-          {/* ── Tableau ── */}
+          {/* Tableau */}
           <div className="panel">
             <div className="panel-header">
-              Données des 7 derniers relevés
+              Relevés disponibles ({history.length})
               <span className="panel-header-sub">Seuil : {seuil} UFC/cm²</span>
             </div>
             <div className="history-table-wrap">
@@ -158,14 +187,12 @@ export default function HistoryPage() {
                     const marge = seuil - ufc;
                     return (
                       <tr key={i} className={i % 2 === 0 ? "row-even" : ""}>
-                        <td className="td-date">{HIST_LABELS[i] || `J-${history.length - 1 - i}`}</td>
+                        <td className="td-date">{dateLabels[i]}</td>
                         <td className={`mono ${st === "critical" ? "red" : st === "warning" ? "orange" : ""}`}>
                           {ufc}
                         </td>
                         <td className="mono txt3">{seuil}</td>
-                        <td>
-                          <span className={`status-badge ${st}`}>{STATUS_LABEL[st]}</span>
-                        </td>
+                        <td><span className={`status-badge ${st}`}>{STATUS_LABEL[st]}</span></td>
                         <td className={`mono ${marge < 0 ? "red" : marge < seuil * 0.2 ? "orange" : "green"}`}>
                           {marge > 0 ? "+" : ""}{marge}
                         </td>

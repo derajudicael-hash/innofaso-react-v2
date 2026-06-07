@@ -59,7 +59,7 @@ function useFlash(ms = 2000) {
 // TAB 1 — ZONES
 // ─────────────────────────────────────────────
 function ZonesTab() {
-  const { zones, updateZone, updateZoneUfc, addZone, deleteZone, thresholds } = useAdminData();
+  const { zones, updateZone, addZone, deleteZone, thresholds } = useAdminData();
   const [editing, setEditing] = useState(null);
   const [draft,   setDraft]   = useState({});
   const [showAdd, setShowAdd] = useState(false);
@@ -71,9 +71,9 @@ function ZonesTab() {
   const cancelEdit = () => { setEditing(null); setDraft({}); };
 
   const saveEdit = () => {
-    updateZoneUfc(draft.id, Number(draft.ufc));
     updateZone(draft.id, {
       label:       draft.label,
+      ufc:         Number(draft.ufc),
       responsible: draft.responsible,
       lastCheck:   draft.lastCheck,
       nextCheck:   draft.nextCheck,
@@ -83,6 +83,14 @@ function ZonesTab() {
     flashSave();
   };
 
+  // Convertit YYYY-MM-DD (input type=date) → DD/MM/YYYY
+  const toFR = (val) => {
+    if (!val) return new Date().toLocaleDateString("fr-FR");
+    if (val.includes("/")) return val;
+    const [y, m, d] = val.split("-");
+    return d && m && y ? `${d}/${m}/${y}` : new Date().toLocaleDateString("fr-FR");
+  };
+
   const handleAdd = () => {
     if (!newZ.label.trim() || !newZ.ufc) return;
     addZone({
@@ -90,8 +98,8 @@ function ZonesTab() {
       ufc:         Number(newZ.ufc),
       seuil:       thresholds.critical,
       responsible: newZ.responsible || "Non assigné",
-      lastCheck:   newZ.lastCheck || new Date().toLocaleDateString("fr-FR"),
-      nextCheck:   newZ.nextCheck || "—",
+      lastCheck:   toFR(newZ.lastCheck),
+      nextCheck:   newZ.nextCheck ? toFR(newZ.nextCheck) : "—",
     });
     setNewZ({ label: "", ufc: "", responsible: "", lastCheck: "", nextCheck: "" });
     setShowAdd(false);
