@@ -449,42 +449,53 @@ const PT_TYPES = [
 
 const EMPTY_FORM = { id: "", label: "", zone_map_id: "", x: "", y: "", point_type: "1", description: "" };
 
-// MiniMap — clique pour placer, glisse un point existant pour le déplacer
+// MiniMap — clique pour placer un nouveau point, glisse pour déplacer un existant
 function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPointDragEnd, editingId }) {
-  const svgRef   = useRef(null);
-  const dragging = useRef(null); // { id, zoneMapId }
+  const svgRef      = useRef(null);
+  const dragId      = useRef(null);   // id du point en cours de drag
+  const dragZone    = useRef(null);   // zoneMapId du point dragué
+  const justDragged = useRef(false);  // évite que le click se déclenche après un drag
+  const [dragPos, setDragPos] = useState(null); // { id, x, y } en % — feedback visuel
 
-  const svgCoords = (e) => {
-    const rect = svgRef.current.getBoundingClientRect();
+  const pct = (e) => {
+    const r = svgRef.current.getBoundingClientRect();
     return {
-      x: +Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width)  * 100)).toFixed(1),
-      y: +Math.min(100, Math.max(0, ((e.clientY - rect.top)  / rect.height) * 100)).toFixed(1),
+      x: +Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width)  * 100)).toFixed(1),
+      y: +Math.min(100, Math.max(0, ((e.clientY - r.top)  / r.height) * 100)).toFixed(1),
     };
   };
 
-  const handleSvgClick = (e) => {
-    if (dragging.current) return; // ne pas déclencher click après drag
-    if (!onPlaceClick) return;
-    const { x, y } = svgCoords(e);
-    onPlaceClick(String(x), String(y));
-  };
-
-  const handlePointMouseDown = (e, pt) => {
+  const onPtMouseDown = (e, id, zoneId) => {
     if (!onPointDragEnd) return;
     e.stopPropagation();
-    dragging.current = { id: pt.id, zoneMapId: pt.zoneMapId };
+    e.preventDefault();
+    dragId.current   = id;
+    dragZone.current = zoneId;
+    const { x, y } = pct(e);
+    setDragPos({ id, x, y });
   };
 
-  const handleMouseMove = (e) => {
-    if (!dragging.current || !onPointDragEnd) return;
-    // visual feedback only — let the parent update via mouseup
+  const onMouseMove = (e) => {
+    if (!dragId.current) return;
+    const { x, y } = pct(e);
+    setDragPos({ id: dragId.current, x, y });
   };
 
-  const handleMouseUp = (e) => {
-    if (!dragging.current || !onPointDragEnd) return;
-    const { x, y } = svgCoords(e);
-    onPointDragEnd(dragging.current.id, String(x), String(y));
-    dragging.current = null;
+  const onMouseUp = (e) => {
+    if (!dragId.current) return;
+    const { x, y } = pct(e);
+    justDragged.current = true;
+    setTimeout(() => { justDragged.current = false; }, 80);
+    onPointDragEnd(dragId.current, String(x), String(y));
+    dragId.current = null;
+    dragZone.current = null;
+    setDragPos(null);
+  };
+
+  const onSvgClick = (e) => {
+    if (justDragged.current || !onPlaceClick) return;
+    const { x, y } = pct(e);
+    onPlaceClick(String(x), String(y));
   };
 
   return (
@@ -492,23 +503,22 @@ function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPoint
       ref={svgRef}
       viewBox={`0 0 ${VW} ${VH}`}
       style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 8, background: "#f9fafb",
-               cursor: onPlaceClick ? "crosshair" : "default", userSelect: "none" }}
-      onClick={handleSvgClick}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+               cursor: dragId.current ? "grabbing" : onPlaceClick ? "crosshair" : "default",
+               userSelect: "none", touchAction: "none" }}
+      onClick={onSvgClick}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
     >
       {ZONES.map(zone => {
         const col = ZONE_COLORS[zone.category] ?? ZONE_COLORS.grey;
-        const isHighlight = highlightZone === zone.id;
-        const pts = pointsByZone?.[zone.id] ?? zone.points;
+        const isHL = highlightZone === zone.id;
+        const pts  = pointsByZone?.[zone.id] ?? zone.points;
         return (
           <g key={zone.id}>
-            <rect
-              x={px(zone.x)} y={py(zone.y)} width={px(zone.width)} height={py(zone.height)}
-              fill={isHighlight ? col.stroke : col.fill}
-              stroke={col.stroke} strokeWidth={isHighlight ? 3 : 1.5} opacity={0.85}
-            />
+            <rect x={px(zone.x)} y={py(zone.y)} width={px(zone.width)} height={py(zone.height)}
+              fill={isHL ? col.stroke : col.fill} stroke={col.stroke}
+              strokeWidth={isHL ? 3 : 1.5} opacity={0.85} />
             <text x={px(zone.x) + px(zone.width) / 2} y={py(zone.y) + 14}
               textAnchor="middle" fontSize="8" fontWeight="700" fill="#1e3a5f"
               fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
@@ -517,19 +527,21 @@ function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPoint
             {pts.map(pt => {
               const typeCol  = PT_TYPES.find(t => t.value === pt.pointType)?.color ?? "#9ca3af";
               const isActive = editingId === pt.id;
-              const canDrag  = !!onPointDragEnd;
+              const isDragging = dragPos?.id === pt.id;
+              const cx = isDragging ? px(dragPos.x) : px(pt.x);
+              const cy = isDragging ? py(dragPos.y) : py(pt.y);
               return (
                 <g key={pt.id}
-                  style={{ cursor: canDrag ? "grab" : "default" }}
-                  onMouseDown={canDrag ? (e) => handlePointMouseDown(e, { ...pt, zoneMapId: zone.id }) : undefined}
+                  style={{ cursor: onPointDragEnd ? "grab" : "default" }}
+                  onMouseDown={onPointDragEnd ? (e) => onPtMouseDown(e, pt.id, zone.id) : undefined}
                 >
-                  <circle cx={px(pt.x)} cy={py(pt.y)} r={isActive ? 9 : 6}
-                    fill={typeCol} stroke={isActive ? "#ef4444" : "white"}
-                    strokeWidth={isActive ? 2.5 : 1.5} opacity={0.95} />
-                  {isActive && (
-                    <text x={px(pt.x) + 11} y={py(pt.y) + 4} fontSize="8" fill="#ef4444"
+                  <circle cx={cx} cy={cy} r={isDragging ? 10 : isActive ? 9 : 6}
+                    fill={typeCol} stroke={isDragging || isActive ? "#ef4444" : "white"}
+                    strokeWidth={isDragging || isActive ? 2.5 : 1.5} opacity={0.95} />
+                  {(isActive || isDragging) && (
+                    <text x={cx + 12} y={cy + 4} fontSize="8" fill="#ef4444"
                       fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
-                      {pt.label}
+                      {pt.label}{isDragging ? ` (${dragPos.x}%, ${dragPos.y}%)` : ""}
                     </text>
                   )}
                 </g>
