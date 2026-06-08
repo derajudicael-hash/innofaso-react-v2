@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAdminData } from "../context/AdminDataContext";
+import { useComputedZones } from "../hooks/useComputedZones";
 import Icon from "./Icon";
 
 const STATUS_LABEL = { critical: "Critique", warning: "Surveillance" };
@@ -14,7 +14,7 @@ function SummaryPill({ cls, count, label }) {
 }
 
 export default function AlertsPage() {
-  const { zones, loading, error } = useAdminData();
+  const { computedZones: zones, loading, error } = useComputedZones();
   const [filter, setFilter] = useState("all");
 
   if (loading) return (
@@ -96,7 +96,8 @@ export default function AlertsPage() {
               <p className="alerts-filter-empty">Aucune zone dans cette catégorie.</p>
             ) : (
               filtered.map((z) => {
-                const pct = Math.min(Math.round((z.ufc / z.seuil) * 100), 999);
+                // Utilise le point le plus défavorable (ratio ufc/seuil_type max)
+                const pct = Math.min(z.worstPct, 999);
                 return (
                   <div key={z.id} className={`alert-card-v2 ${z.status}`}>
                     <div className="acv2-body">
@@ -127,13 +128,13 @@ export default function AlertsPage() {
                           />
                         </div>
                         <span className="acv2-progress-label">
-                          {z.ufc} / {z.seuil} UFC/cm² ({pct}%)
+                          Point critique : {z.worstUfc} / {z.worstSeuil} UFC/cm² ({pct}%)
                         </span>
                       </div>
                     </div>
 
                     <div className="acv2-right">
-                      <div className={`acv2-ufc ${z.status}`}>{z.ufc}</div>
+                      <div className={`acv2-ufc ${z.status}`}>{z.worstUfc}</div>
                       <div className="acv2-ufc-unit">UFC/cm²</div>
                       <button className={`acv2-action ${z.status}`}>
                         <Icon

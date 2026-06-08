@@ -50,6 +50,27 @@ router.put("/:id", auth, requireAdmin, async (req, res) => {
       [zone_map_id, label, Number(x), Number(y), point_type || "1", description || "", ufcVal, req.params.id]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: "Point introuvable." });
+
+    // Enregistrement automatique de l'historique quand UFC est fourni
+    if (ufcVal !== null) {
+      const [[zoneRow]] = await db.query("SELECT id FROM zones WHERE map_id = ?", [zone_map_id]);
+      if (zoneRow) {
+        const [pts] = await db.query(
+          "SELECT ufc FROM sampling_points WHERE zone_map_id = ? AND ufc IS NOT NULL",
+          [zone_map_id]
+        );
+        if (pts.length > 0) {
+          const maxUfc = Math.max(...pts.map(p => Number(p.ufc)));
+          await db.query("INSERT INTO zone_history (zone_id, ufc) VALUES (?, ?)", [zoneRow.id, maxUfc]);
+          await db.query(
+            "DELETE FROM zone_history WHERE zone_id = ? AND recorded_at < DATE_SUB(NOW(), INTERVAL 90 DAY)",
+            [zoneRow.id]
+          );
+          await db.query("UPDATE zones SET ufc = ? WHERE id = ?", [maxUfc, zoneRow.id]);
+        }
+      }
+    }
+
     res.json({ id: req.params.id, zone_map_id, label, x: Number(x), y: Number(y), point_type: point_type || "1", description: description || "", ufc: ufcVal });
   } catch (err) {
     console.error("PUT /points/:id error:", err);

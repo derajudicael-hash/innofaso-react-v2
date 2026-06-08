@@ -103,20 +103,26 @@ const DEFAULT_POINTS = [
     }
 
     // Seed des zones basées sur les zones carte (une par zone physique)
+    // Seuils conformes NF EN ISO 18593 / EC 2073/2005 :
+    //   Type 1 (surfaces en contact direct produit) = 10 UFC/cm²
+    //   Type 2 (surfaces en contact indirect)        = 50 UFC/cm²
+    //   Type 3 (surfaces sans contact alimentaire)   = 100 UFC/cm²
+    //   Type 4 (zones périphériques / environnement) = 500 UFC/cm²
+    // Pour chaque zone, le seuil retenu est celui du type de point le plus restrictif présent.
     const MAP_ZONES_SEED = [
-      { map_id: 'stockage_pf',         label: 'Stockage Produits Finis',  seuil: 50 },
-      { map_id: 'conditionnement',     label: 'Conditionnement',           seuil: 50 },
-      { map_id: 'melange',             label: 'Mélange',                   seuil: 50 },
-      { map_id: 'premix',              label: 'PreMélange',                seuil: 50 },
-      { map_id: 'pesage',              label: 'Pesage poudres',            seuil: 50 },
-      { map_id: 'huile',               label: 'Huile et pesage S+A+H',    seuil: 50 },
-      { map_id: 'sas_poudres',         label: 'SAS poudres',              seuil: 50 },
-      { map_id: 'matieres_premieres',  label: 'Matières Premières',       seuil: 50 },
-      { map_id: 'laverie',             label: 'Laverie + buanderie',      seuil: 50 },
-      { map_id: 'vestiaire_laverie',   label: 'Vestiaire Laverie',        seuil: 50 },
-      { map_id: 'vestiaires_h',        label: 'Vestiaires H',             seuil: 50 },
-      { map_id: 'vestiaires_visiteur', label: 'Vestiaires Visiteur',      seuil: 50 },
-      { map_id: 'vestiaires_f',        label: 'Vestiaires F',             seuil: 50 },
+      { map_id: 'stockage_pf',         label: 'Stockage Produits Finis',  seuil: 500 }, // type 4 uniquement
+      { map_id: 'conditionnement',     label: 'Conditionnement',           seuil: 10  }, // types 1+2+3 → type 1 dominant
+      { map_id: 'melange',             label: 'Mélange',                   seuil: 10  }, // types 1+2+3 → type 1 dominant
+      { map_id: 'premix',              label: 'Pré-Mélange',               seuil: 10  }, // types 1+2+3 → type 1 dominant
+      { map_id: 'pesage',              label: 'Pesage poudres',            seuil: 10  }, // types 1+2+3 → type 1 dominant
+      { map_id: 'huile',               label: 'Huile et pesage S+A+H',    seuil: 10  }, // types 1+2+3 → type 1 dominant
+      { map_id: 'sas_poudres',         label: 'SAS poudres',              seuil: 100 }, // type 3 uniquement
+      { map_id: 'matieres_premieres',  label: 'Matières Premières',       seuil: 500 }, // type 4 uniquement
+      { map_id: 'laverie',             label: 'Laverie + buanderie',      seuil: 500 }, // type 4 uniquement
+      { map_id: 'vestiaire_laverie',   label: 'Vestiaire Laverie',        seuil: 500 }, // type 4 uniquement
+      { map_id: 'vestiaires_h',        label: 'Vestiaires H',             seuil: 500 }, // type 4 uniquement
+      { map_id: 'vestiaires_visiteur', label: 'Vestiaires Visiteur',      seuil: 500 }, // type 4 uniquement
+      { map_id: 'vestiaires_f',        label: 'Vestiaires F',             seuil: 500 }, // type 4 uniquement
     ];
     for (const z of MAP_ZONES_SEED) {
       const [[{ zc }]] = await db.query("SELECT COUNT(*) AS zc FROM zones WHERE map_id = ?", [z.map_id]);
@@ -128,6 +134,9 @@ const DEFAULT_POINTS = [
            new Date().toLocaleDateString('fr-FR'), '—',
            'good', 'Zone conforme', 'Niveaux dans les limites acceptables']
         );
+      } else {
+        // Corrige les seuils incorrects des zones déjà créées (migration)
+        await db.query("UPDATE zones SET seuil = ? WHERE map_id = ? AND seuil <> ?", [z.seuil, z.map_id, z.seuil]);
       }
     }
     console.log("✅  Zones carte vérifiées/initialisées en base.");

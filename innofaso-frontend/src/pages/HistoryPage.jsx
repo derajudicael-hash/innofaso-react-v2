@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useAdminData } from "../context/AdminDataContext";
+import { useComputedZones } from "../hooks/useComputedZones";
 import TrendChart from "../components/TrendChart";
 import Icon from "../components/Icon";
 
@@ -33,7 +33,7 @@ function StatBox({ label, value, unit, colorClass }) {
 }
 
 export default function HistoryPage() {
-  const { zones, loading } = useAdminData();
+  const { computedZones: zones, loading } = useComputedZones();
   const [selectedId, setSelectedId] = useState(null);
   const [tab, setTab] = useState("7j");
 
@@ -43,7 +43,8 @@ export default function HistoryPage() {
 
   const zone    = useMemo(() => zones.find((z) => z.id === selectedId) || zones[0] || null, [zones, selectedId]);
   const history = zone?.history || [];
-  const seuil   = zone?.seuil ?? 50;
+  // Seuil le plus restrictif de la zone (min des seuils de types présents)
+  const seuil   = zone?.worstSeuil ?? zone?.seuil ?? 50;
 
   // Dates réelles pour chaque relevé (aujourd'hui - N jours)
   const dateLabels = useMemo(() =>

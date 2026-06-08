@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
-import { useAdminData }      from "../context/AdminDataContext";
 import { usePoints }         from "../context/PointsContext";
+import { useComputedZones }  from "../hooks/useComputedZones";
 import { usePersistedFiles } from "../map/usePersistedFiles";
 import KpiCard       from "../components/KpiCard";
 import ChartSection  from "../components/ChartSection";
@@ -56,8 +56,8 @@ export const KPI_DETAILS = {
 };
 
 export default function DashboardPage() {
-  const { zones, loading, error, thresholds } = useAdminData();
-  const { pointsByZone, ufcByZone } = usePoints();
+  const { computedZones, thresholds, loading, error } = useComputedZones();
+  const { pointsByZone } = usePoints();
   const { activeResults } = usePersistedFiles();
 
   const [selectedMapZone, setSelectedMapZone] = useState(null);
@@ -68,26 +68,14 @@ export default function DashboardPage() {
   const critThresh = thresholds?.critical ?? 50;
   const warnThresh = thresholds?.warning  ?? 40;
 
-  // Zones avec UFC calculé dynamiquement depuis les points de prélèvement
-  const computedZones = useMemo(() => {
-    return zones
-      .filter(z => z.mapId)
-      .map(z => {
-        const maxUfc = ufcByZone[z.mapId] ?? null;
-        const ufc    = maxUfc ?? 0;
-        const seuil  = z.seuil || critThresh;
-        const status = ufc >= seuil          ? "critical"
-                     : ufc >= seuil * 0.8    ? "warning" : "ok";
-        return { ...z, ufc, status };
-      });
-  }, [zones, ufcByZone, critThresh]);
-
   const kpiStats = useMemo(() => {
+    // Zones avec données seulement pour les KPI (zones sans mesure = "ok" par défaut)
+    const measured = computedZones.filter(z => z.hasData);
     const critCount = computedZones.filter(z => z.status === "critical").length;
     const warnCount = computedZones.filter(z => z.status === "warning").length;
     const okCount   = computedZones.filter(z => z.status === "ok").length;
-    const avgUfc    = computedZones.length
-      ? Math.round(computedZones.reduce((a, z) => a + z.ufc, 0) / computedZones.length)
+    const avgUfc    = measured.length
+      ? Math.round(measured.reduce((a, z) => a + z.ufc, 0) / measured.length)
       : 0;
 
     const prevCritCount = computedZones.filter(z => {
@@ -99,11 +87,11 @@ export default function DashboardPage() {
       return prev >= warnThresh && prev < critThresh;
     }).length;
     const prevOkCount = computedZones.length - prevCritCount - prevWarnCount;
-    const prevAvgUfc  = computedZones.length
-      ? Math.round(computedZones.reduce((a, z) => {
+    const prevAvgUfc  = measured.length
+      ? Math.round(measured.reduce((a, z) => {
           const prev = z.history?.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
           return a + prev;
-        }, 0) / computedZones.length)
+        }, 0) / measured.length)
       : 0;
 
     return { critCount, warnCount, okCount, avgUfc, prevCritCount, prevWarnCount, prevOkCount, prevAvgUfc };
@@ -216,7 +204,7 @@ export default function DashboardPage() {
               </>
             ) : (
               /* Pas de zone sélectionnée → graphique global première zone */
-              zones[0] && <ChartSection zone={zones[0]} tab={tab} setTab={setTab} />
+              computedZones[0] && <ChartSection zone={computedZones[0]} tab={tab} setTab={setTab} />
             )}
           </div>
         </div>
