@@ -57,7 +57,7 @@ export const KPI_DETAILS = {
 
 export default function DashboardPage() {
   const { zones, loading, error, thresholds } = useAdminData();
-  const { pointsByZone } = usePoints();
+  const { pointsByZone, ufcByZone } = usePoints();
   const { activeResults } = usePersistedFiles();
 
   const [selectedMapZone, setSelectedMapZone] = useState(null);
@@ -68,30 +68,46 @@ export default function DashboardPage() {
   const critThresh = thresholds?.critical ?? 50;
   const warnThresh = thresholds?.warning  ?? 40;
 
-  const kpiStats = useMemo(() => {
-    const critCount = zones.filter(z => z.status === "critical").length;
-    const warnCount = zones.filter(z => z.status === "warning").length;
-    const okCount   = zones.filter(z => z.status === "ok").length;
-    const avgUfc    = zones.length ? Math.round(zones.reduce((a, z) => a + z.ufc, 0) / zones.length) : 0;
+  // Zones avec UFC calculé dynamiquement depuis les points de prélèvement
+  const computedZones = useMemo(() => {
+    return zones
+      .filter(z => z.mapId)
+      .map(z => {
+        const maxUfc = ufcByZone[z.mapId] ?? null;
+        const ufc    = maxUfc ?? 0;
+        const seuil  = z.seuil || critThresh;
+        const status = ufc >= seuil          ? "critical"
+                     : ufc >= seuil * 0.8    ? "warning" : "ok";
+        return { ...z, ufc, status };
+      });
+  }, [zones, ufcByZone, critThresh]);
 
-    const prevCritCount = zones.filter(z => {
-      const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
+  const kpiStats = useMemo(() => {
+    const critCount = computedZones.filter(z => z.status === "critical").length;
+    const warnCount = computedZones.filter(z => z.status === "warning").length;
+    const okCount   = computedZones.filter(z => z.status === "ok").length;
+    const avgUfc    = computedZones.length
+      ? Math.round(computedZones.reduce((a, z) => a + z.ufc, 0) / computedZones.length)
+      : 0;
+
+    const prevCritCount = computedZones.filter(z => {
+      const prev = z.history?.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
       return prev >= critThresh;
     }).length;
-    const prevWarnCount = zones.filter(z => {
-      const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
+    const prevWarnCount = computedZones.filter(z => {
+      const prev = z.history?.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
       return prev >= warnThresh && prev < critThresh;
     }).length;
-    const prevOkCount = zones.length - prevCritCount - prevWarnCount;
-    const prevAvgUfc  = zones.length
-      ? Math.round(zones.reduce((a, z) => {
-          const prev = z.history.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
+    const prevOkCount = computedZones.length - prevCritCount - prevWarnCount;
+    const prevAvgUfc  = computedZones.length
+      ? Math.round(computedZones.reduce((a, z) => {
+          const prev = z.history?.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
           return a + prev;
-        }, 0) / zones.length)
+        }, 0) / computedZones.length)
       : 0;
 
     return { critCount, warnCount, okCount, avgUfc, prevCritCount, prevWarnCount, prevOkCount, prevAvgUfc };
-  }, [zones, critThresh, warnThresh]);
+  }, [computedZones, critThresh, warnThresh]);
 
   if (loading) return (
     <div className="dash-loading">
@@ -110,8 +126,8 @@ export default function DashboardPage() {
     { key: "avg",      label: "Contamination moyenne", value: avgUfc,    sub: "UFC/cm² · toutes zones",   iconName: "down",  iconClass: "ic-gray",    valueClass: "v-dark",   delay: "0.20s", cardCls: "kpi-avg",  trend: avgUfc - prevAvgUfc,       trendIsGood: false },
   ];
 
-  // Zones pour FactoryMap (mapId = id de zone factory-hygiene)
-  const backendZones = zones.filter(z => z.mapId).map(z => ({
+  // Zones pour FactoryMap — on utilise computedZones (UFC depuis les points)
+  const backendZones = computedZones.map(z => ({
     id: z.id, mapId: z.mapId, status: z.status, ufc: z.ufc, seuil: z.seuil, label: z.label,
   }));
 
@@ -120,17 +136,17 @@ export default function DashboardPage() {
     ? backendZones.find(bz => bz.mapId === selectedMapZone.id)
     : undefined;
 
-  // Zone backend pour ChartSection (backend zone object, pas factory zone)
+  // Zone pour ChartSection
   const chartZone = activeBackendZone
-    ? zones.find(z => z.id === activeBackendZone.id)
-    : zones[0];
+    ? computedZones.find(z => z.id === activeBackendZone.id)
+    : computedZones[0];
 
   return (
     <>
       {openModal && (
         <KpiModal
           kpiKey={openModal}
-          zones={zones}
+          zones={computedZones}
           kpiDetails={KPI_DETAILS}
           onClose={() => setOpenModal(null)}
         />

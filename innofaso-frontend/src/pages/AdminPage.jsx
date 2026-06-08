@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { usePoints } from "../context/PointsContext";
@@ -62,21 +62,35 @@ function useFlash(ms = 2000) {
 // TAB 1 — ZONES
 // ─────────────────────────────────────────────
 function ZonesTab() {
-  const { zones, updateZone, addZone, deleteZone, thresholds } = useAdminData();
+  const { zones, updateZone, thresholds } = useAdminData();
+  const { ufcByZone } = usePoints();
   const [editing, setEditing] = useState(null);
   const [draft,   setDraft]   = useState({});
-  const [showAdd, setShowAdd] = useState(false);
-  const [newZ,    setNewZ]    = useState({ label: "", ufc: "", responsible: "", lastCheck: "", nextCheck: "" });
   const [saved,   flashSave]  = useFlash();
   const [confirmDel, setConfirmDel] = useState(null);
 
-  const startEdit = (z) => { setEditing(z.id); setDraft({ ...z }); setShowAdd(false); };
+  // Zones avec UFC calculé depuis les points (max par zone)
+  const displayZones = useMemo(() => {
+    return zones
+      .filter(z => z.mapId)
+      .map(z => {
+        const maxUfc = ufcByZone[z.mapId] ?? null;
+        const ufc    = maxUfc ?? 0;
+        const seuil  = z.seuil || thresholds.critical || 50;
+        const status = ufc >= seuil       ? "critical"
+                     : ufc >= seuil * 0.8 ? "warning" : "ok";
+        return { ...z, ufc, status };
+      });
+  }, [zones, ufcByZone, thresholds]);
+
+  const startEdit = (z) => { setEditing(z.id); setDraft({ ...z }); };
   const cancelEdit = () => { setEditing(null); setDraft({}); };
 
   const saveEdit = () => {
+    const z = displayZones.find(z => z.id === draft.id);
     updateZone(draft.id, {
       label:       draft.label,
-      ufc:         Number(draft.ufc),
+      ufc:         z?.ufc ?? 0,
       responsible: draft.responsible,
       lastCheck:   draft.lastCheck,
       nextCheck:   draft.nextCheck,
@@ -86,92 +100,31 @@ function ZonesTab() {
     flashSave();
   };
 
-  // Convertit YYYY-MM-DD (input type=date) → DD/MM/YYYY
-  const toFR = (val) => {
-    if (!val) return new Date().toLocaleDateString("fr-FR");
-    if (val.includes("/")) return val;
-    const [y, m, d] = val.split("-");
-    return d && m && y ? `${d}/${m}/${y}` : new Date().toLocaleDateString("fr-FR");
-  };
-
-  const handleAdd = () => {
-    if (!newZ.label.trim() || !newZ.ufc) return;
-    addZone({
-      label:       newZ.label,
-      ufc:         Number(newZ.ufc),
-      seuil:       thresholds.critical,
-      responsible: newZ.responsible || "Non assigné",
-      lastCheck:   toFR(newZ.lastCheck),
-      nextCheck:   newZ.nextCheck ? toFR(newZ.nextCheck) : "—",
-    });
-    setNewZ({ label: "", ufc: "", responsible: "", lastCheck: "", nextCheck: "" });
-    setShowAdd(false);
-    flashSave();
-  };
-
-  const confirmDelete = (id) => {
-    deleteZone(id);
-    setConfirmDel(null);
-    flashSave();
-  };
-
   return (
     <div className="adm-tab-body">
 
       {/* Toolbar */}
       <div className="adm-toolbar">
-        <SectionTitle>Gestion des zones ({zones.length})</SectionTitle>
-        <div className="adm-toolbar-right">
-          <FlashMsg visible={saved} text="Modifications enregistrées" />
-          <button className="btn-add" onClick={() => { setShowAdd(true); setEditing(null); }}>
-            + Ajouter une zone
-          </button>
-        </div>
+        <SectionTitle>Zones de prélèvement ({displayZones.length})</SectionTitle>
+        <FlashMsg visible={saved} text="Modifications enregistrées" />
       </div>
-
-      {/* Add form */}
-      {showAdd && (
-        <div className="adm-add-card">
-          <div className="adm-add-card-title">Nouvelle zone</div>
-          <div className="adm-form-grid">
-            <Field label="Nom de la zone *">
-              <Inp value={newZ.label} onChange={(v) => setNewZ((p) => ({ ...p, label: v }))} placeholder="ex : Zone Lavage" />
-            </Field>
-            <Field label="UFC/cm² actuel *">
-              <Inp type="number" value={newZ.ufc} onChange={(v) => setNewZ((p) => ({ ...p, ufc: v }))} placeholder="ex : 25" />
-            </Field>
-            <Field label="Responsable">
-              <Inp value={newZ.responsible} onChange={(v) => setNewZ((p) => ({ ...p, responsible: v }))} placeholder="Prénom Nom" />
-            </Field>
-            <Field label="Dernier contrôle">
-              <Inp type="date" value={newZ.lastCheck} onChange={(v) => setNewZ((p) => ({ ...p, lastCheck: v }))} />
-            </Field>
-            <Field label="Prochain contrôle">
-              <Inp type="date" value={newZ.nextCheck} onChange={(v) => setNewZ((p) => ({ ...p, nextCheck: v }))} />
-            </Field>
-          </div>
-          <div className="adm-form-actions">
-            <button className="btn-cancel" onClick={() => setShowAdd(false)}>Annuler</button>
-            <button className="btn-confirm" onClick={handleAdd} disabled={!newZ.label || !newZ.ufc}>Créer la zone</button>
-          </div>
-        </div>
-      )}
+      <p className="adm-desc">
+        L'UFC/cm² de chaque zone est calculé automatiquement comme la valeur maximale
+        parmi tous ses points de prélèvement. Modifiez le responsable, les dates de contrôle
+        et le seuil critique depuis le bouton Modifier.
+      </p>
 
       {/* Zones list */}
       <div className="adm-zones-list">
-        {zones.map((z) => (
+        {displayZones.map((z) => (
           <div key={z.id} className={`adm-zone-row${editing === z.id ? " adm-zone-row--editing" : ""}`}>
             {editing === z.id ? (
-              /* Edit mode */
               <div className="adm-zone-edit-form">
                 <div className="adm-form-grid">
                   <Field label="Nom">
                     <Inp value={draft.label} onChange={(v) => setDraft((p) => ({ ...p, label: v }))} />
                   </Field>
-                  <Field label="UFC/cm²">
-                    <Inp type="number" value={draft.ufc} onChange={(v) => setDraft((p) => ({ ...p, ufc: v }))} />
-                  </Field>
-                  <Field label="Seuil limite">
+                  <Field label="Seuil critique (UFC/cm²)">
                     <Inp type="number" value={draft.seuil} onChange={(v) => setDraft((p) => ({ ...p, seuil: v }))} />
                   </Field>
                   <Field label="Responsable">
@@ -190,13 +143,16 @@ function ZonesTab() {
                 </div>
               </div>
             ) : (
-              /* View mode */
               <div className="adm-zone-view">
                 <div className="adm-zone-view-left">
                   <div className="adm-zone-view-name">{z.label}</div>
                   <div className="adm-zone-view-meta">
                     <StatusBadge status={z.status} />
-                    <span className="adm-zone-ufc">{z.ufc} UFC/cm²</span>
+                    <span className="adm-zone-ufc">
+                      {ufcByZone[z.mapId] !== null && ufcByZone[z.mapId] !== undefined
+                        ? `${ufcByZone[z.mapId]} UFC/cm² (max)`
+                        : <span style={{ color: "var(--txt3)", fontStyle: "italic" }}>Pas encore mesuré</span>}
+                    </span>
                     <span className="adm-zone-resp"><Icon name="user" size={11} strokeWidth={2} /> {z.responsible}</span>
                     <span className="adm-zone-check"><Icon name="calendar" size={11} strokeWidth={2} /> {z.lastCheck}</span>
                   </div>
@@ -205,32 +161,12 @@ function ZonesTab() {
                   <button className="btn-edit" onClick={() => startEdit(z)}>
                     <Icon name="edit" size={13} strokeWidth={2} /> Modifier
                   </button>
-                  <button className="btn-delete" onClick={() => setConfirmDel(z.id)}>
-                    <Icon name="trash" size={13} strokeWidth={2} /> Supprimer
-                  </button>
                 </div>
               </div>
             )}
           </div>
         ))}
       </div>
-
-      {/* Delete confirm modal */}
-      {confirmDel && (
-        <>
-          <div className="adm-overlay" onClick={() => setConfirmDel(null)} />
-          <div className="adm-confirm-modal">
-            <div className="adm-confirm-title">Confirmer la suppression</div>
-            <div className="adm-confirm-desc">
-              Cette action est irréversible. La zone sera définitivement supprimée.
-            </div>
-            <div className="adm-form-actions">
-              <button className="btn-cancel" onClick={() => setConfirmDel(null)}>Annuler</button>
-              <button className="btn-danger" onClick={() => confirmDelete(confirmDel)}>Supprimer</button>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

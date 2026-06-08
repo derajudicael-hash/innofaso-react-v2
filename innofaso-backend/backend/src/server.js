@@ -101,6 +101,36 @@ const DEFAULT_POINTS = [
       }
       console.log(`✅  ${DEFAULT_POINTS.length} points de prélèvement initialisés en base.`);
     }
+
+    // Seed des zones basées sur les zones carte (une par zone physique)
+    const MAP_ZONES_SEED = [
+      { map_id: 'stockage_pf',         label: 'Stockage Produits Finis',  seuil: 50 },
+      { map_id: 'conditionnement',     label: 'Conditionnement',           seuil: 50 },
+      { map_id: 'melange',             label: 'Mélange',                   seuil: 50 },
+      { map_id: 'premix',              label: 'PreMélange',                seuil: 50 },
+      { map_id: 'pesage',              label: 'Pesage poudres',            seuil: 50 },
+      { map_id: 'huile',               label: 'Huile et pesage S+A+H',    seuil: 50 },
+      { map_id: 'sas_poudres',         label: 'SAS poudres',              seuil: 50 },
+      { map_id: 'matieres_premieres',  label: 'Matières Premières',       seuil: 50 },
+      { map_id: 'laverie',             label: 'Laverie + buanderie',      seuil: 50 },
+      { map_id: 'vestiaire_laverie',   label: 'Vestiaire Laverie',        seuil: 50 },
+      { map_id: 'vestiaires_h',        label: 'Vestiaires H',             seuil: 50 },
+      { map_id: 'vestiaires_visiteur', label: 'Vestiaires Visiteur',      seuil: 50 },
+      { map_id: 'vestiaires_f',        label: 'Vestiaires F',             seuil: 50 },
+    ];
+    for (const z of MAP_ZONES_SEED) {
+      const [[{ zc }]] = await db.query("SELECT COUNT(*) AS zc FROM zones WHERE map_id = ?", [z.map_id]);
+      if (zc === 0) {
+        await db.query(
+          `INSERT INTO zones (label, map_id, status, ufc, seuil, responsible, last_check, next_check, alert_cls, alert_title, alert_desc)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          [z.label, z.map_id, 'ok', 0, z.seuil, 'Non assigné',
+           new Date().toLocaleDateString('fr-FR'), '—',
+           'good', 'Zone conforme', 'Niveaux dans les limites acceptables']
+        );
+      }
+    }
+    console.log("✅  Zones carte vérifiées/initialisées en base.");
   } catch (e) {
     console.warn("DB init warning:", e.message);
   }
