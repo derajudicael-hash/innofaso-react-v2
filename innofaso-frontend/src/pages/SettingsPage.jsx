@@ -121,9 +121,10 @@ export default function SettingsPage() {
         {/* ── Seuils ── */}
         <SettingsSection title="Seuils de contamination UFC/cm²">
           <p className="settings-info">
-            Toute zone dont la valeur UFC/cm² atteint le seuil Surveillance passe en état
-            «&nbsp;Surveillance&nbsp;». Si elle atteint le seuil Critique, l'état devient «&nbsp;Critique&nbsp;»
-            et une alerte est déclenchée.
+            Les statuts des zones sont calculés selon <strong>NF EN ISO 18593</strong> par type
+            de point de prélèvement : Type 1 = 10, Type 2 = 50, Type 3 = 100, Type 4 = 500 UFC/cm².
+            La surveillance commence à 80 % du seuil. Les valeurs ci-dessous sont conservées
+            comme référence complémentaire pour les graphiques.
           </p>
 
           <Field label="Seuil Surveillance (UFC/cm²)">

@@ -22,7 +22,7 @@ export default function ChartSection({ zone, tab, setTab }) {
       </div>
 
       <div className="chart-wrap">
-        <TrendChart history={zone.history} tab={tab} seuil={zone.seuil} />
+        <TrendChart history={zone.history} tab={tab} seuil={zone.worstSeuil ?? zone.seuil} />
       </div>
     </div>
   );

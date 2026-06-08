@@ -118,9 +118,9 @@ export default function DashboardPage() {
     { key: "avg",      label: "Contamination moyenne", value: avgUfc,    sub: "UFC/cm² · toutes zones",   iconName: "down",  iconClass: "ic-gray",    valueClass: "v-dark",   delay: "0.20s", cardCls: "kpi-avg",  trend: avgUfc - prevAvgUfc,       trendIsGood: false },
   ];
 
-  // Zones pour FactoryMap — on utilise computedZones (UFC depuis les points)
   const backendZones = computedZones.map(z => ({
-    id: z.id, mapId: z.mapId, status: z.status, ufc: z.ufc, seuil: z.seuil, label: z.label,
+    id: z.id, mapId: z.mapId, status: z.status, ufc: z.ufc,
+    seuil: z.seuil, label: z.label, hasData: z.hasData,
   }));
 
   // Zone backend correspondant à la zone de la carte sélectionnée

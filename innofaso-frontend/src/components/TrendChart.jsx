@@ -84,10 +84,12 @@ function drawChart(canvas, history, tab, seuil = 50) {
     ctx.fillText(`Seuil ${seuil}`, pad.left + 4, ty - 5);
   }
 
-  // Data points
+  // Data points — quand un seul point, le placer au centre
   const pts = data.map((v, i) => ({
-    x: pad.left + (i / (data.length - 1)) * W,
-    y: pad.top  + H * (1 - (v - minVal) / (maxVal - minVal)),
+    x: data.length > 1 ? pad.left + (i / (data.length - 1)) * W : pad.left + W / 2,
+    y: maxVal > minVal
+      ? pad.top + H * (1 - (v - minVal) / (maxVal - minVal))
+      : pad.top + H / 2,
   }));
 
   // Gradient area fill

@@ -5,11 +5,11 @@ import TopBar      from "../map/UploadPanel";
 import FileSidebar from "../map/FileSidebar";
 import { parseFile }         from "../map/labParser";
 import { usePersistedFiles } from "../map/usePersistedFiles";
-import { useAdminData }      from "../context/AdminDataContext";
+import { useComputedZones }  from "../hooks/useComputedZones";
 import { usePoints }         from "../context/PointsContext";
 
 export default function CartoPage() {
-  const { zones: backendZones, loading } = useAdminData();
+  const { computedZones } = useComputedZones();
   const { pointsByZone } = usePoints();
   const { fileEntries, activeFileId, activeResults, hydrated, addFile, removeFile, clearAll, setActiveFileId } = usePersistedFiles();
   const [isLoading, setIsLoading]         = useState(false);
@@ -35,10 +35,11 @@ export default function CartoPage() {
 
   const activeFile = fileEntries.find(f => f.id === activeFileId) ?? null;
 
-  // Map backend zones to the format FactoryMap expects (mapId = factory-hygiene zone id)
-  const mappedBackendZones = (backendZones || [])
-    .filter(z => z.mapId)
-    .map(z => ({ id: z.id, mapId: z.mapId, status: z.status, ufc: z.ufc, seuil: z.seuil, label: z.label }));
+  // Statuts calculés selon ISO 18593 (seuils par type de point, pire cas)
+  const mappedBackendZones = computedZones.map(z => ({
+    id: z.id, mapId: z.mapId, status: z.status, ufc: z.ufc,
+    seuil: z.seuil, label: z.label, hasData: z.hasData,
+  }));
 
   // Find the backend zone corresponding to the selected factory zone
   const activeBackendZone = selectedZone

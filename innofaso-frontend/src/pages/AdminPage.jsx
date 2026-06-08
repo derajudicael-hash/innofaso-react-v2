@@ -2,6 +2,8 @@ import { useState, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { usePoints } from "../context/PointsContext";
+import { authAPI } from "../services/api";
+import { pointStatus } from "../hooks/useComputedZones";
 import { ZONES } from "../map/factoryData";
 import Icon from "../components/Icon";
 
@@ -62,26 +64,27 @@ function useFlash(ms = 2000) {
 // TAB 1 — ZONES
 // ─────────────────────────────────────────────
 function ZonesTab() {
-  const { zones, updateZone, thresholds } = useAdminData();
-  const { ufcByZone } = usePoints();
+  const { zones, updateZone } = useAdminData();
+  const { pointsByZone, ufcByZone } = usePoints();
   const [editing, setEditing] = useState(null);
   const [draft,   setDraft]   = useState({});
   const [saved,   flashSave]  = useFlash();
   const [confirmDel, setConfirmDel] = useState(null);
 
-  // Zones avec UFC calculé depuis les points (max par zone)
+  // Zones avec UFC et statut calculés selon ISO 18593 (seuils par type de point)
   const displayZones = useMemo(() => {
-    return zones
-      .filter(z => z.mapId)
-      .map(z => {
-        const maxUfc = ufcByZone[z.mapId] ?? null;
-        const ufc    = maxUfc ?? 0;
-        const seuil  = z.seuil || thresholds.critical || 50;
-        const status = ufc >= seuil       ? "critical"
-                     : ufc >= seuil * 0.8 ? "warning" : "ok";
-        return { ...z, ufc, status };
-      });
-  }, [zones, ufcByZone, thresholds]);
+    return zones.filter(z => z.mapId).map(z => {
+      const pts    = (pointsByZone[z.mapId] ?? []).filter(p => p.ufc !== null);
+      const maxUfc = pts.length > 0 ? Math.max(...pts.map(p => p.ufc)) : null;
+      let status   = "ok";
+      for (const pt of pts) {
+        const st = pointStatus(pt.ufc, pt.pointType);
+        if (st === "critical") { status = "critical"; break; }
+        if (st === "warning")    status = "warning";
+      }
+      return { ...z, ufc: maxUfc ?? 0, status };
+    });
+  }, [zones, pointsByZone]);
 
   const startEdit = (z) => { setEditing(z.id); setDraft({ ...z }); };
   const cancelEdit = () => { setEditing(null); setDraft({}); };
@@ -194,8 +197,9 @@ function SeuilsTab() {
     <div className="adm-tab-body">
       <SectionTitle>Seuils de contamination</SectionTitle>
       <Desc>
-        Ces valeurs déterminent le statut de chaque zone. Modifier un seuil recalcule
-        immédiatement la couleur et les alertes sur le tableau de bord.
+        Les statuts appliquent <strong>NF EN ISO 18593</strong> : Type 1 = 10, Type 2 = 50,
+        Type 3 = 100, Type 4 = 500 UFC/cm² (surveillance à 80 %). Ces seuils sont conservés
+        comme référence complémentaire pour les graphiques historiques.
       </Desc>
 
       {error && <div className="adm-error-msg">{error}</div>}
@@ -300,19 +304,28 @@ function SiteTab() {
 // ─────────────────────────────────────────────
 function CompteTab() {
   const { user } = useAuth();
-  const [fields, setFields] = useState({ old: "", new: "", confirm: "" });
-  const [msg, setMsg]       = useState(null);
+  const [fields,  setFields]  = useState({ old: "", new: "", confirm: "" });
+  const [msg,     setMsg]     = useState(null);
+  const [saving,  setSaving]  = useState(false);
 
   const set = (k) => (e) => setFields((p) => ({ ...p, [k]: e.target.value }));
 
-  const savePassword = () => {
+  const savePassword = async () => {
     const { old: o, new: n, confirm: c } = fields;
     if (!o || !n || !c)    { setMsg({ err: true, text: "Remplissez tous les champs." }); return; }
     if (n !== c)            { setMsg({ err: true, text: "Les mots de passe ne correspondent pas." }); return; }
     if (n.length < 8)       { setMsg({ err: true, text: "Minimum 8 caractères requis." }); return; }
-    setMsg({ err: false, text: "Mot de passe modifié avec succès." });
-    setFields({ old: "", new: "", confirm: "" });
-    setTimeout(() => setMsg(null), 3000);
+    setSaving(true);
+    try {
+      await authAPI.changePassword(o, n);
+      setMsg({ err: false, text: "Mot de passe modifié avec succès." });
+      setFields({ old: "", new: "", confirm: "" });
+    } catch (err) {
+      setMsg({ err: true, text: err.message || "Mot de passe actuel incorrect." });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setMsg(null), 4000);
+    }
   };
 
   const roleLabel = user?.role === "superadmin" ? "Super Administrateur" : "Éditeur";
@@ -356,7 +369,9 @@ function CompteTab() {
         ))}
       </div>
 
-      <button className="btn-save" onClick={savePassword}>Changer le mot de passe</button>
+      <button className="btn-save" onClick={savePassword} disabled={saving}>
+        {saving ? "Modification…" : "Changer le mot de passe"}
+      </button>
     </div>
   );
 }

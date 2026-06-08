@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { useAdminData } from "../context/AdminDataContext";
-import { useTheme }     from "../context/ThemeContext";
+import { useComputedZones } from "../hooks/useComputedZones";
+import { useTheme }         from "../context/ThemeContext";
 import { ZONES } from "../map/factoryData";
 
 const totalPoints = ZONES.reduce((acc, z) => acc + z.points.length, 0);
@@ -30,9 +30,9 @@ function CriticalBadge({ count }) {
 }
 
 export default function Topbar({ clock, activeNav }) {
-  const { zones } = useAdminData();
+  const { computedZones } = useComputedZones();
   const { theme, setTheme } = useTheme();
-  const critCount = zones.filter((z) => z.status === "critical").length;
+  const critCount = computedZones.filter((z) => z.status === "critical").length;
 
   const page = useMemo(() => {
     if (activeNav === "carto") {

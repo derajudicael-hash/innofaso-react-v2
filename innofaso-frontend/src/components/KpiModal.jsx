@@ -29,15 +29,14 @@ export default function KpiModal({ kpiKey, zones = [], kpiDetails, onClose }) {
 
   if (!detail) return null;
 
-  // Filtrer les vraies zones backend selon le type de KPI
-  const relatedZones = kpiKey === "avg"
-    ? zones
-    : zones.filter(z => {
-        if (kpiKey === "critical") return z.status === "critical";
-        if (kpiKey === "warning")  return z.status === "warning";
-        if (kpiKey === "ok")       return z.status === "ok";
-        return false;
-      });
+  // Filtrer selon le KPI — zones non mesurées exclues des "conformes" et de la moyenne
+  const relatedZones = zones.filter(z => {
+    if (kpiKey === "critical") return z.status === "critical";
+    if (kpiKey === "warning")  return z.status === "warning";
+    if (kpiKey === "ok")       return z.hasData && z.status === "ok";
+    if (kpiKey === "avg")      return z.hasData;
+    return false;
+  });
 
   return (
     <>

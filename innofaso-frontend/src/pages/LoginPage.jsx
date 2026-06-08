@@ -24,8 +24,7 @@ export default function LoginPage({ onBack }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 700));
-    login(username, password);
+    await login(username, password);
     setLoading(false);
   };
 

@@ -12,6 +12,7 @@ export interface BackendZone {
   ufc: number;
   seuil: number;
   label?: string;
+  hasData?: boolean;
 }
 
 interface Props {
@@ -188,7 +189,7 @@ export default function FactoryMap({ results, backendZones = [], dynamicPoints, 
           if (hasUploadedForZone && level !== 'unknown') {
             fill   = ZONE_DATA_FILL[level];
             stroke = isSelected ? '#0066cc' : LEVEL_COLORS[level];
-          } else if (bz) {
+          } else if (bz && bz.hasData !== false) {
             fill   = BACKEND_FILL[bz.status];
             stroke = isSelected ? '#0066cc' : BACKEND_STROKE[bz.status];
           } else {
@@ -235,7 +236,7 @@ export default function FactoryMap({ results, backendZones = [], dynamicPoints, 
                   fill={LEVEL_COLORS[level]} stroke="white" strokeWidth="1.2"
                   style={{ pointerEvents: 'none' }}/>
               )}
-              {bz && !hasUploadedForZone && (
+              {bz && bz.hasData !== false && !hasUploadedForZone && (
                 <circle cx={zx + zw - 7} cy={zy + 7} r={4.5}
                   fill={BACKEND_STROKE[bz.status]} stroke="white" strokeWidth="1.2"
                   style={{ pointerEvents: 'none' }}/>
