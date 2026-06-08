@@ -447,8 +447,6 @@ const PT_TYPES = [
   { value: "4", label: "Type 4 — Zone grise / externe",           color: "#9ca3af" },
 ];
 
-const EMPTY_FORM = { id: "", label: "", zone_map_id: "", x: "", y: "", point_type: "1", description: "" };
-
 // MiniMap — clique pour placer un nouveau point, glisse pour déplacer un existant
 function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPointDragEnd, editingId }) {
   const svgRef      = useRef(null);
@@ -565,26 +563,19 @@ function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPoint
 }
 
 function PointsTab() {
-  const { points, pointsByZone, addPoint, updatePoint, deletePoint } = usePoints();
+  const { points, pointsByZone, updatePoint } = usePoints();
   const [selectedZoneId, setSelectedZoneId] = useState(ZONES[0]?.id ?? "");
-  const [form,      setForm]      = useState(EMPTY_FORM);
-  const [editing,   setEditing]   = useState(null); // id en cours d'édition
-  const [showForm,  setShowForm]  = useState(false);
-  const [error,     setError]     = useState("");
-  const [saved,     flashSave]    = useFlash();
-  const [confirmDel, setConfirmDel] = useState(null);
+  const [editing, setEditing] = useState(null); // objet point en cours
+  const [draft,   setDraft]   = useState({ x: "", y: "" });
+  const [error,   setError]   = useState("");
+  const [saved,   flashSave]  = useFlash();
 
-  const selectedZone = ZONES.find(z => z.id === selectedZoneId);
-  const zonePoints   = points.filter(p => p.zoneMapId === selectedZoneId);
-  const crosshair    = (showForm && form.x && form.y) ? { x: form.x, y: form.y } : null;
+  const zonePoints = points.filter(p => p.zoneMapId === selectedZoneId);
+  const crosshair  = editing && draft.x !== "" && draft.y !== "" ? { x: draft.x, y: draft.y } : null;
 
-  const setF = (k) => (val) => setForm(prev => ({ ...prev, [k]: val }));
-
-  // Drag d'un point existant directement sur la mini-carte (hors mode formulaire)
-  const handlePointDragEnd = async (id, x, y) => {
+  const doUpdate = async (id, x, y) => {
     const pt = points.find(p => p.id === id);
     if (!pt) return;
-    setError("");
     try {
       await updatePoint(id, {
         zone_map_id: pt.zoneMapId, label: pt.label,
@@ -594,71 +585,29 @@ function PointsTab() {
       flashSave();
     } catch (err) {
       const msg = err.message || "";
-      setError(msg.includes("Token") ? "Session expirée — déconnectez-vous et reconnectez-vous." : msg);
+      setError(msg.includes("Token") ? "Session expirée — reconnectez-vous." : msg || "Erreur serveur.");
     }
   };
 
-  const openAdd = () => {
-    setEditing(null);
-    setForm({ ...EMPTY_FORM, zone_map_id: selectedZoneId });
-    setError("");
-    setShowForm(true);
-  };
+  // Drag direct sur la mini-carte
+  const handleDragEnd = (id, x, y) => doUpdate(id, x, y);
+
+  // Clic sur la mini-carte en mode édition → met à jour les coords dans le formulaire
+  const handleMapClick = (x, y) => setDraft(d => ({ ...d, x, y }));
 
   const openEdit = (pt) => {
-    setEditing(pt.id);
-    setForm({
-      id:          pt.id,
-      label:       pt.label,
-      zone_map_id: pt.zoneMapId,
-      x:           String(pt.x),
-      y:           String(pt.y),
-      point_type:  pt.pointType,
-      description: pt.description,
-    });
+    setEditing(pt);
+    setDraft({ x: String(pt.x), y: String(pt.y) });
     setError("");
-    setShowForm(true);
   };
 
-  const cancel = () => { setShowForm(false); setEditing(null); setError(""); };
+  const cancel = () => { setEditing(null); setDraft({ x: "", y: "" }); setError(""); };
 
   const save = async () => {
-    if (!form.id.trim())         return setError("L'identifiant est requis.");
-    if (!form.zone_map_id)       return setError("Choisissez une zone.");
-    if (form.x === "" || form.y === "") return setError("Les coordonnées X et Y sont requises.");
+    if (draft.x === "" || draft.y === "") return setError("Coordonnées requises.");
     setError("");
-    try {
-      if (editing) {
-        await updatePoint(editing, {
-          zone_map_id: form.zone_map_id, label: form.label || form.id,
-          x: Number(form.x), y: Number(form.y),
-          point_type: form.point_type, description: form.description,
-        });
-      } else {
-        await addPoint({
-          id: form.id.trim(), zone_map_id: form.zone_map_id,
-          label: form.label.trim() || form.id.trim(),
-          x: Number(form.x), y: Number(form.y),
-          point_type: form.point_type, description: form.description,
-        });
-      }
-      cancel();
-      flashSave();
-      setSelectedZoneId(form.zone_map_id);
-    } catch (err) {
-      const msg = err.message || "";
-      setError(msg.includes("Token") ? "Session expirée — déconnectez-vous et reconnectez-vous." : msg || "Erreur lors de la sauvegarde.");
-    }
-  };
-
-  const handleDelete = async (id) => {
-    try { await deletePoint(id); setConfirmDel(null); }
-    catch (err) { setError(err.message || "Erreur lors de la suppression."); }
-  };
-
-  const handleMapClick = (x, y) => {
-    setF("x")(x);
-    setF("y")(y);
+    await doUpdate(editing.id, draft.x, draft.y);
+    cancel();
   };
 
   return (
@@ -669,20 +618,17 @@ function PointsTab() {
         <div className="pts-left">
           <div className="pts-zone-bar">
             {ZONES.map(z => (
-              <button
-                key={z.id}
+              <button key={z.id}
                 className={`pts-zone-btn${selectedZoneId === z.id ? " pts-zone-btn--active" : ""}`}
-                onClick={() => { setSelectedZoneId(z.id); setShowForm(false); }}
-              >
+                onClick={() => { setSelectedZoneId(z.id); cancel(); }}>
                 {z.name}
-                <span className="pts-zone-count">{(pointsByZone[z.id]?.length ?? 0)}</span>
+                <span className="pts-zone-count">{pointsByZone[z.id]?.length ?? 0}</span>
               </button>
             ))}
           </div>
 
           <div className="pts-list-header">
-            <span>{selectedZone?.name} — {zonePoints.length} point{zonePoints.length > 1 ? "s" : ""}</span>
-            <button className="btn-save" style={{ padding: "5px 14px", fontSize: 12 }} onClick={openAdd}>+ Ajouter</button>
+            <span>{ZONES.find(z => z.id === selectedZoneId)?.name} — {zonePoints.length} point{zonePoints.length > 1 ? "s" : ""}</span>
           </div>
 
           {zonePoints.length === 0 ? (
@@ -695,31 +641,26 @@ function PointsTab() {
                 </thead>
                 <tbody>
                   {zonePoints.map(pt => {
-                    const typeInfo = PT_TYPES.find(t => t.value === pt.pointType);
+                    const typeInfo  = PT_TYPES.find(t => t.value === pt.pointType);
+                    const isEditing = editing?.id === pt.id;
                     return (
-                      <tr key={pt.id} className={editing === pt.id ? "pts-row--editing" : ""}>
+                      <tr key={pt.id} className={isEditing ? "pts-row--editing" : ""}>
                         <td><span className="pts-id">{pt.id}</span></td>
                         <td>{pt.label}</td>
                         <td>
                           <span className="pts-type-dot" style={{ background: typeInfo?.color }} />
                           T{pt.pointType}
                         </td>
-                        <td className="pts-num">{pt.x}</td>
-                        <td className="pts-num">{pt.y}</td>
+                        <td className="pts-num">{isEditing ? draft.x : pt.x}</td>
+                        <td className="pts-num">{isEditing ? draft.y : pt.y}</td>
                         <td className="pts-actions">
-                          <button className="pts-btn-edit" onClick={() => openEdit(pt)} title="Modifier">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          <button className="pts-btn-edit"
+                            onClick={() => isEditing ? cancel() : openEdit(pt)}
+                            title={isEditing ? "Annuler" : "Modifier la position"}>
+                            {isEditing
+                              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>}
                           </button>
-                          {confirmDel === pt.id ? (
-                            <span className="pts-confirm-del">
-                              <button className="pts-btn-del-ok" onClick={() => handleDelete(pt.id)}>Oui</button>
-                              <button className="pts-btn-cancel" onClick={() => setConfirmDel(null)}>Non</button>
-                            </span>
-                          ) : (
-                            <button className="pts-btn-del" onClick={() => setConfirmDel(pt.id)} title="Supprimer">
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                            </button>
-                          )}
                         </td>
                       </tr>
                     );
@@ -728,63 +669,41 @@ function PointsTab() {
               </table>
             </div>
           )}
-          <FlashMsg visible={saved} text="Enregistré avec succès" />
+
+          <FlashMsg visible={saved} text="Position enregistrée" />
           {error && <p className="pts-error">{error}</p>}
         </div>
 
         {/* ── Colonne droite : mini-carte + formulaire ── */}
         <div className="pts-right">
           <p className="pts-map-hint">
-            {showForm
-              ? "Cliquez sur le plan pour placer le point, ou saisissez les coordonnées manuellement."
-              : "Glissez un point sur le plan pour le déplacer. Cliquez sur Modifier pour éditer ses informations."}
+            {editing
+              ? `Déplacement de "${editing.label}" — cliquez sur le plan ou saisissez les coordonnées.`
+              : "Glissez un point directement sur le plan pour le déplacer, ou cliquez sur le crayon pour saisir les coordonnées manuellement."}
           </p>
           <MiniMap
             pointsByZone={pointsByZone}
             highlightZone={selectedZoneId}
             crosshair={crosshair}
-            editingId={editing}
-            onPlaceClick={showForm ? handleMapClick : null}
-            onPointDragEnd={!showForm ? handlePointDragEnd : null}
+            editingId={editing?.id ?? null}
+            onPlaceClick={editing ? handleMapClick : null}
+            onPointDragEnd={!editing ? handleDragEnd : null}
           />
 
-          {showForm && (
+          {editing && (
             <div className="pts-form">
-              <div className="pts-form-title">{editing ? "Modifier le point" : "Nouveau point"}</div>
-
+              <div className="pts-form-title">Déplacer — {editing.label}</div>
               <div className="adm-form-grid">
-                <Field label="Identifiant *">
-                  <Inp value={form.id} onChange={setF("id")} placeholder="ex : 1.5.9" readOnly={!!editing} />
-                </Field>
-                <Field label="Libellé (affiché sur la carte)">
-                  <Inp value={form.label} onChange={setF("label")} placeholder="même que l'ID si vide" />
-                </Field>
-                <Field label="Zone *">
-                  <select className="adm-input" value={form.zone_map_id} onChange={e => setF("zone_map_id")(e.target.value)}>
-                    <option value="">-- Choisir une zone --</option>
-                    {ZONES.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Type de prélèvement *">
-                  <select className="adm-input" value={form.point_type} onChange={e => setF("point_type")(e.target.value)}>
-                    {PT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                </Field>
                 <Field label="X — horizontal (0–100 %)">
-                  <Inp value={form.x} onChange={setF("x")} type="number" placeholder="ex : 30.5 (cliquez sur le plan)" />
+                  <Inp value={draft.x} onChange={(v) => setDraft(d => ({ ...d, x: v }))} type="number" placeholder="ex : 30.5" />
                 </Field>
                 <Field label="Y — vertical (0–100 %)">
-                  <Inp value={form.y} onChange={setF("y")} type="number" placeholder="ex : 45.0 (cliquez sur le plan)" />
-                </Field>
-                <Field label="Description">
-                  <Inp value={form.description} onChange={setF("description")} placeholder="ex : Surface interne trémie" />
+                  <Inp value={draft.y} onChange={(v) => setDraft(d => ({ ...d, y: v }))} type="number" placeholder="ex : 45.0" />
                 </Field>
               </div>
-
               {error && <p className="pts-error">{error}</p>}
-
               <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-                <button className="btn-save" onClick={save}>{editing ? "Enregistrer" : "Créer"}</button>
+                <button className="btn-save" onClick={save}>Enregistrer</button>
                 <button className="adm-btn-cancel" onClick={cancel}>Annuler</button>
               </div>
             </div>
