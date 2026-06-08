@@ -30,28 +30,22 @@ npm install
 
 Installe automatiquement les dépendances des 3 sous-projets (backend, frontend, map).
 
-### 3. Configurer la base de données
-
-**Copier le fichier de configuration :**
-
-```bash
-cp innofaso-backend/backend/.env.example innofaso-backend/backend/.env
-```
-
-> Sous Windows (PowerShell) :
-> ```powershell
-> copy innofaso-backend\backend\.env.example innofaso-backend\backend\.env
-> ```
-
-Modifier le `.env` si nécessaire (mot de passe MySQL, port…). Par défaut : `root` sans mot de passe (XAMPP standard).
-
-**Créer la base de données :**
+### 3. Créer la base de données
 
 ```bash
 npm run setup
 ```
 
 Crée la base `innofaso`, toutes les tables, les 13 zones, les 49 points de prélèvement avec leurs valeurs UFC de démonstration, et les historiques.
+
+> **Config XAMPP standard (root sans mot de passe) → aucun fichier à modifier.**
+>
+> Si ton MySQL a un mot de passe :
+> ```bash
+> cp innofaso-backend/backend/.env.example innofaso-backend/backend/.env
+> # Windows : copy innofaso-backend\backend\.env.example innofaso-backend\backend\.env
+> ```
+> Puis ouvrir le `.env` et renseigner `DB_PASSWORD=ton_mot_de_passe`.
 
 ### 4. Lancer le projet
 
