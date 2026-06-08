@@ -256,16 +256,31 @@ export default function FactoryMap({ results, backendZones = [], dynamicPoints, 
                     onMouseEnter={() => setHovPt(pt.id)}
                     onMouseLeave={() => setHovPt(null)}>
                     <circle cx={ptx} cy={pty} r={r} fill={dotColor} stroke="white" strokeWidth="1.2"/>
-                    {isHovP && (
-                      <g>
-                        <rect x={ptx + 7} y={pty - 9} width={pt.label.length * 6.2 + 8} height={14}
-                          fill="rgba(0,0,0,0.75)" rx="3"/>
-                        <text x={ptx + 11} y={pty + 1.5} fontSize="8.5" fill="white"
-                          fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
-                          {pt.label}
-                        </text>
-                      </g>
-                    )}
+                    {isHovP && (() => {
+                      const hasUfc = pt.ufc !== null && pt.ufc !== undefined;
+                      const ufcTxt = hasUfc ? `${pt.ufc} UFC/cm²` : null;
+                      const w = Math.max(
+                        pt.label.length * 6.2 + 8,
+                        ufcTxt ? ufcTxt.length * 5.4 + 8 : 0
+                      );
+                      const h = hasUfc ? 26 : 14;
+                      return (
+                        <g>
+                          <rect x={ptx + 7} y={pty - 9} width={w} height={h}
+                            fill="rgba(0,0,0,0.82)" rx="3"/>
+                          <text x={ptx + 11} y={pty + 1.5} fontSize="8.5" fill="white"
+                            fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
+                            {pt.label}
+                          </text>
+                          {hasUfc && (
+                            <text x={ptx + 11} y={pty + 13} fontSize="7.5" fill="#fbbf24"
+                              fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
+                              {ufcTxt}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })()}
                   </g>
                 );
               })}

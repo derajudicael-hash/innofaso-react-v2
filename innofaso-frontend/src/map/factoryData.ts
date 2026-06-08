@@ -7,6 +7,7 @@ export interface SamplingPoint {
   y: number; // % of SVG viewBox height (490)
   pointType: '1' | '2' | '3' | '4';
   description: string;
+  ufc?: number | null;
 }
 
 export interface Zone {
