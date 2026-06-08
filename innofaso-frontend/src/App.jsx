@@ -13,6 +13,7 @@ import CartoPage     from "./pages/CartoPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { AdminDataProvider }     from "./context/AdminDataContext";
 import { ThemeProvider }         from "./context/ThemeContext";
+import { PointsProvider }        from "./context/PointsContext";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -90,7 +91,9 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <AdminDataProvider>
-          <InnerApp />
+          <PointsProvider>
+            <InnerApp />
+          </PointsProvider>
         </AdminDataProvider>
       </AuthProvider>
     </ThemeProvider>

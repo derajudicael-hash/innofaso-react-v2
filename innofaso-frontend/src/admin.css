@@ -599,3 +599,165 @@
   transition: background .15s;
 }
 .btn-logout:hover { background: #fecaca; }
+
+/* ═══════════════════════════════════════════════
+   POINTS DE PRELEVEMENT TAB
+═══════════════════════════════════════════════ */
+.pts-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.pts-left  { display: flex; flex-direction: column; gap: 10px; }
+.pts-right { display: flex; flex-direction: column; gap: 12px; }
+
+.pts-zone-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  background: var(--bg);
+}
+
+.pts-zone-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-family: "DM Sans", sans-serif;
+  color: var(--txt2);
+  text-align: left;
+  transition: all 0.15s;
+}
+.pts-zone-btn:hover        { background: var(--card-bg); color: var(--txt); }
+.pts-zone-btn--active      { background: var(--brand-bg); color: var(--brand); font-weight: 600; }
+
+.pts-zone-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--border);
+  color: var(--txt3);
+  padding: 1px 6px;
+  border-radius: 99px;
+}
+.pts-zone-btn--active .pts-zone-count { background: var(--brand); color: #fff; }
+
+.pts-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--txt);
+}
+.pts-empty { font-size: 12px; color: var(--txt3); padding: 12px 0; }
+
+.pts-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.pts-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pts-table th {
+  background: var(--bg);
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--txt3);
+  border-bottom: 1px solid var(--border);
+}
+.pts-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--txt); }
+.pts-table tr:last-child td { border-bottom: none; }
+.pts-table tr:hover td      { background: var(--bg); }
+.pts-row--editing td        { background: var(--brand-bg); }
+
+.pts-id  { font-family: "DM Mono", monospace; font-size: 11.5px; font-weight: 600; color: var(--brand); }
+.pts-num { font-family: "DM Mono", monospace; font-size: 11px; color: var(--txt2); }
+
+.pts-type-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.pts-actions { display: flex; gap: 4px; align-items: center; }
+
+.pts-btn-edit, .pts-btn-del {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--txt2);
+  transition: all 0.15s;
+}
+.pts-btn-edit:hover { background: var(--brand-bg); color: var(--brand); border-color: var(--brand-bd); }
+.pts-btn-del:hover  { background: var(--red-bg);   color: var(--red);   border-color: var(--red-bd); }
+
+.pts-confirm-del { display: flex; gap: 4px; align-items: center; }
+.pts-btn-del-ok {
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: none;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: "DM Sans", sans-serif;
+}
+.pts-btn-cancel {
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--txt2);
+  font-size: 11px;
+  cursor: pointer;
+  font-family: "DM Sans", sans-serif;
+}
+
+.pts-map-hint { font-size: 11.5px; color: var(--txt3); line-height: 1.4; }
+
+.pts-form {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+}
+.pts-form-title { font-size: 13px; font-weight: 700; color: var(--txt); margin-bottom: 12px; }
+.pts-error { color: var(--red); font-size: 12px; font-weight: 600; margin-top: 6px; }
+
+.adm-btn-cancel {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--txt2);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: "DM Sans", sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.adm-btn-cancel:hover { background: var(--bg); }

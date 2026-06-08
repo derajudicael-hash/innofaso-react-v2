@@ -6,9 +6,11 @@ import FileSidebar from "../map/FileSidebar";
 import { parseFile }         from "../map/labParser";
 import { usePersistedFiles } from "../map/usePersistedFiles";
 import { useAdminData }      from "../context/AdminDataContext";
+import { usePoints }         from "../context/PointsContext";
 
 export default function CartoPage() {
   const { zones: backendZones, loading } = useAdminData();
+  const { pointsByZone } = usePoints();
   const { fileEntries, activeFileId, activeResults, hydrated, addFile, removeFile, clearAll, setActiveFileId } = usePersistedFiles();
   const [isLoading, setIsLoading]         = useState(false);
   const [selectedZone, setSelectedZone]   = useState(null);
@@ -73,6 +75,7 @@ export default function CartoPage() {
           <FactoryMap
             results={activeResults}
             backendZones={mappedBackendZones}
+            dynamicPoints={pointsByZone}
             selectedZone={selectedZone}
             onSelectZone={zone => { setSelectedZone(zone); setSelectedPoint(null); }}
             onSelectPoint={(pt, zone) => { setSelectedZone(zone); setSelectedPoint(pt); }}

@@ -62,6 +62,18 @@ async function setup() {
     } else {
       console.log(`Base de données "${dbName}" déjà à jour.`);
     }
+
+    // Migration : table sampling_points (v4)
+    const [sp] = await conn.query("SHOW TABLES LIKE 'sampling_points'");
+    if (sp.length === 0) {
+      console.log("Création de la table sampling_points...");
+      const sql = fs.readFileSync(path.join(__dirname, "database.sql"), "utf8");
+      const createSP = sql.match(/CREATE TABLE IF NOT EXISTS sampling_points[\s\S]*?;/)?.[0];
+      const insertSP = sql.match(/INSERT INTO sampling_points[\s\S]*?ON DUPLICATE KEY UPDATE[\s\S]*?;/)?.[0];
+      if (createSP) await conn.query(createSP);
+      if (insertSP) await conn.query(insertSP);
+      console.log("Table sampling_points créée avec 49 points de prélèvement.");
+    }
   }
 
   await conn.end();

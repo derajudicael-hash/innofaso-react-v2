@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useAdminData }      from "../context/AdminDataContext";
+import { usePoints }         from "../context/PointsContext";
 import { usePersistedFiles } from "../map/usePersistedFiles";
 import KpiCard       from "../components/KpiCard";
 import ChartSection  from "../components/ChartSection";
@@ -56,6 +57,7 @@ export const KPI_DETAILS = {
 
 export default function DashboardPage() {
   const { zones, loading, error, thresholds } = useAdminData();
+  const { pointsByZone } = usePoints();
   const { activeResults } = usePersistedFiles();
 
   const [selectedMapZone, setSelectedMapZone] = useState(null);
@@ -166,6 +168,7 @@ export default function DashboardPage() {
                 <FactoryMap
                   results={activeResults}
                   backendZones={backendZones}
+                  dynamicPoints={pointsByZone}
                   selectedZone={selectedMapZone}
                   onSelectZone={zone => { setSelectedMapZone(zone); setSelectedPoint(null); }}
                   onSelectPoint={(pt, zone) => { setSelectedMapZone(zone); setSelectedPoint(pt); }}

@@ -16,7 +16,8 @@ export interface BackendZone {
 
 interface Props {
   results: Map<string, LabResult[]>;
-  backendZones?: BackendZone[];          // ← seul ajout au zip original
+  backendZones?: BackendZone[];
+  dynamicPoints?: Record<string, SamplingPoint[]>; // points depuis la DB (remplace les statiques si fourni)
   selectedZone: Zone | null;
   onSelectZone: (z: Zone | null) => void;
   onSelectPoint: (p: SamplingPoint, z: Zone) => void;
@@ -46,7 +47,7 @@ const ZONE_DATA_FILL: Record<ResultLevel, string> = {
 const BACKEND_FILL   = { ok: '#bbf7d0', warning: '#fde68a', critical: '#fecaca' };
 const BACKEND_STROKE = { ok: '#22c55e', warning: '#f59e0b', critical: '#ef4444' };
 
-export default function FactoryMap({ results, backendZones = [], selectedZone, onSelectZone, onSelectPoint }: Props) {
+export default function FactoryMap({ results, backendZones = [], dynamicPoints, selectedZone, onSelectZone, onSelectPoint }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [vb, setVb] = useState({ x: 0, y: 0, w: VW, h: VH });
   const [hovZone, setHovZone] = useState<string | null>(null);
@@ -174,7 +175,8 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
         {/* ── ZONES ── */}
         {ZONES.map(zone => {
           const zx = px(zone.x), zy = py(zone.y), zw = px(zone.width), zh = py(zone.height);
-          const zonePointIds = zone.points.map(p => p.id);
+          const zonePts = dynamicPoints?.[zone.id] ?? zone.points;
+          const zonePointIds = zonePts.map(p => p.id);
           const level = getZoneLevel(results, zonePointIds);
           const isSelected = selectedZone?.id === zone.id;
           const isHov = hovZone === zone.id;
@@ -240,7 +242,7 @@ export default function FactoryMap({ results, backendZones = [], selectedZone, o
               )}
 
               {/* Sampling point dots */}
-              {zone.points.map(pt => {
+              {zonePts.map(pt => {
                 const ptResults = results.get(pt.id) ?? [];
                 const ptLevel = ptResults.length > 0 ? getPointOverallLevel(ptResults) : 'unknown';
                 const dotColor = ptResults.length > 0 ? LEVEL_COLORS[ptLevel] : GRAY_DOT;

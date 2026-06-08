@@ -18,6 +18,7 @@ app.use(express.json());
 // ── Routes ────────────────────────────────────
 app.use("/api/auth",     require("./routes/auth"));
 app.use("/api/zones",    require("./routes/zones"));
+app.use("/api/points",   require("./routes/points"));
 app.use("/api/settings", require("./routes/settings"));
 
 // ── Health check ─────────────────────────────

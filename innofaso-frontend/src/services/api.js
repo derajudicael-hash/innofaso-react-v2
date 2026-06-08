@@ -72,6 +72,22 @@ export const zonesAPI = {
 };
 
 // ═══════════════════════════════════════════
+// POINTS DE PRELEVEMENT
+// ═══════════════════════════════════════════
+export const pointsAPI = {
+  getAll: () => request("/points"),
+
+  create: (pt) =>
+    request("/points", { method: "POST", body: JSON.stringify(pt) }),
+
+  update: (id, pt) =>
+    request(`/points/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(pt) }),
+
+  remove: (id) =>
+    request(`/points/${encodeURIComponent(id)}`, { method: "DELETE" }),
+};
+
+// ═══════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════
 export const settingsAPI = {

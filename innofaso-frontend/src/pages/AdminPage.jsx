@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import { usePoints } from "../context/PointsContext";
+import { ZONES } from "../map/factoryData";
 import Icon from "../components/Icon";
 
 // ─── Shared UI atoms ──────────────────────────
@@ -424,10 +426,302 @@ function CompteTab() {
 }
 
 // ─────────────────────────────────────────────
+// TAB 5 — POINTS DE PRELEVEMENT
+// ─────────────────────────────────────────────
+const VW = 1515, VH = 490;
+const px = (p) => (p / 100) * VW;
+const py = (p) => (p / 100) * VH;
+
+const ZONE_COLORS = {
+  white:    { fill: "#dbeafe", stroke: "#3b82f6" },
+  grey:     { fill: "#e5e7eb", stroke: "#9ca3af" },
+  vestiaire:{ fill: "#fce7f3", stroke: "#ec4899" },
+  laverie:  { fill: "#fef9c3", stroke: "#ca8a04" },
+  external: { fill: "#f3f4f6", stroke: "#6b7280" },
+};
+
+const PT_TYPES = [
+  { value: "1", label: "Type 1 — Surface de contact alimentaire", color: "#3b82f6" },
+  { value: "2", label: "Type 2 — Équipement",                     color: "#f97316" },
+  { value: "3", label: "Type 3 — Environnement",                  color: "#22c55e" },
+  { value: "4", label: "Type 4 — Zone grise / externe",           color: "#9ca3af" },
+];
+
+const EMPTY_FORM = { id: "", label: "", zone_map_id: "", x: "", y: "", point_type: "1", description: "" };
+
+function MiniMap({ pointsByZone, highlightZone, crosshair, onClick }) {
+  const svgRef = useRef(null);
+
+  const handleClick = (e) => {
+    if (!onClick) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const svgX = ((e.clientX - rect.left) / rect.width) * VW;
+    const svgY = ((e.clientY - rect.top) / rect.height) * VH;
+    onClick(
+      Math.min(100, Math.max(0, (svgX / VW) * 100)).toFixed(1),
+      Math.min(100, Math.max(0, (svgY / VH) * 100)).toFixed(1)
+    );
+  };
+
+  return (
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${VW} ${VH}`}
+      style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 8, background: "#f9fafb", cursor: onClick ? "crosshair" : "default" }}
+      onClick={handleClick}
+    >
+      {ZONES.map(zone => {
+        const col = ZONE_COLORS[zone.category] ?? ZONE_COLORS.grey;
+        const isHighlight = highlightZone === zone.id;
+        const pts = pointsByZone?.[zone.id] ?? zone.points;
+        return (
+          <g key={zone.id}>
+            <rect
+              x={px(zone.x)} y={py(zone.y)} width={px(zone.width)} height={py(zone.height)}
+              fill={isHighlight ? col.stroke : col.fill}
+              stroke={col.stroke} strokeWidth={isHighlight ? 3 : 1.5} opacity={0.85}
+            />
+            <text x={px(zone.x) + px(zone.width) / 2} y={py(zone.y) + 14}
+              textAnchor="middle" fontSize="8" fontWeight="700" fill="#1e3a5f"
+              fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
+              {zone.name}
+            </text>
+            {pts.map(pt => {
+              const typeCol = PT_TYPES.find(t => t.value === pt.pointType)?.color ?? "#9ca3af";
+              return (
+                <circle key={pt.id} cx={px(pt.x)} cy={py(pt.y)} r={5}
+                  fill={typeCol} stroke="white" strokeWidth={1.2} opacity={0.9}
+                  style={{ pointerEvents: "none" }} />
+              );
+            })}
+          </g>
+        );
+      })}
+      {crosshair && (
+        <g style={{ pointerEvents: "none" }}>
+          <line x1={px(Number(crosshair.x))} y1={0} x2={px(Number(crosshair.x))} y2={VH} stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" opacity={0.7}/>
+          <line x1={0} y1={py(Number(crosshair.y))} x2={VW} y2={py(Number(crosshair.y))} stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" opacity={0.7}/>
+          <circle cx={px(Number(crosshair.x))} cy={py(Number(crosshair.y))} r={8} fill="#ef4444" stroke="white" strokeWidth={2}/>
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function PointsTab() {
+  const { points, pointsByZone, addPoint, updatePoint, deletePoint } = usePoints();
+  const [selectedZoneId, setSelectedZoneId] = useState(ZONES[0]?.id ?? "");
+  const [form,      setForm]      = useState(EMPTY_FORM);
+  const [editing,   setEditing]   = useState(null); // id en cours d'édition
+  const [showForm,  setShowForm]  = useState(false);
+  const [error,     setError]     = useState("");
+  const [saved,     flashSave]    = useFlash();
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const selectedZone   = ZONES.find(z => z.id === selectedZoneId);
+  const zonePoints     = points.filter(p => p.zoneMapId === selectedZoneId);
+  const crosshair      = (showForm && form.x && form.y) ? { x: form.x, y: form.y } : null;
+
+  const setF = (k) => (val) => setForm(prev => ({ ...prev, [k]: val }));
+
+  const openAdd = () => {
+    setEditing(null);
+    setForm({ ...EMPTY_FORM, zone_map_id: selectedZoneId });
+    setError("");
+    setShowForm(true);
+  };
+
+  const openEdit = (pt) => {
+    setEditing(pt.id);
+    setForm({
+      id:          pt.id,
+      label:       pt.label,
+      zone_map_id: pt.zoneMapId,
+      x:           String(pt.x),
+      y:           String(pt.y),
+      point_type:  pt.pointType,
+      description: pt.description,
+    });
+    setError("");
+    setShowForm(true);
+  };
+
+  const cancel = () => { setShowForm(false); setEditing(null); setError(""); };
+
+  const save = async () => {
+    if (!form.id.trim())         return setError("L'identifiant est requis.");
+    if (!form.zone_map_id)       return setError("Choisissez une zone.");
+    if (form.x === "" || form.y === "") return setError("Les coordonnées X et Y sont requises.");
+    setError("");
+    try {
+      if (editing) {
+        await updatePoint(editing, {
+          zone_map_id: form.zone_map_id, label: form.label || form.id,
+          x: Number(form.x), y: Number(form.y),
+          point_type: form.point_type, description: form.description,
+        });
+      } else {
+        await addPoint({
+          id: form.id.trim(), zone_map_id: form.zone_map_id,
+          label: form.label.trim() || form.id.trim(),
+          x: Number(form.x), y: Number(form.y),
+          point_type: form.point_type, description: form.description,
+        });
+      }
+      cancel();
+      flashSave();
+      setSelectedZoneId(form.zone_map_id);
+    } catch (err) {
+      setError(err.message || "Erreur lors de la sauvegarde.");
+    }
+  };
+
+  const handleDelete = async (id) => {
+    try { await deletePoint(id); setConfirmDel(null); }
+    catch (err) { setError(err.message || "Erreur lors de la suppression."); }
+  };
+
+  const handleMapClick = (x, y) => {
+    setF("x")(x);
+    setF("y")(y);
+  };
+
+  return (
+    <div className="adm-tab-body">
+      <div className="pts-layout">
+
+        {/* ── Colonne gauche : zones + liste ── */}
+        <div className="pts-left">
+          <div className="pts-zone-bar">
+            {ZONES.map(z => (
+              <button
+                key={z.id}
+                className={`pts-zone-btn${selectedZoneId === z.id ? " pts-zone-btn--active" : ""}`}
+                onClick={() => { setSelectedZoneId(z.id); setShowForm(false); }}
+              >
+                {z.name}
+                <span className="pts-zone-count">{(pointsByZone[z.id]?.length ?? 0)}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="pts-list-header">
+            <span>{selectedZone?.name} — {zonePoints.length} point{zonePoints.length > 1 ? "s" : ""}</span>
+            <button className="btn-save" style={{ padding: "5px 14px", fontSize: 12 }} onClick={openAdd}>+ Ajouter</button>
+          </div>
+
+          {zonePoints.length === 0 ? (
+            <p className="pts-empty">Aucun point dans cette zone.</p>
+          ) : (
+            <div className="pts-table-wrap">
+              <table className="pts-table">
+                <thead>
+                  <tr><th>ID</th><th>Libellé</th><th>Type</th><th>X%</th><th>Y%</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {zonePoints.map(pt => {
+                    const typeInfo = PT_TYPES.find(t => t.value === pt.pointType);
+                    return (
+                      <tr key={pt.id} className={editing === pt.id ? "pts-row--editing" : ""}>
+                        <td><span className="pts-id">{pt.id}</span></td>
+                        <td>{pt.label}</td>
+                        <td>
+                          <span className="pts-type-dot" style={{ background: typeInfo?.color }} />
+                          T{pt.pointType}
+                        </td>
+                        <td className="pts-num">{pt.x}</td>
+                        <td className="pts-num">{pt.y}</td>
+                        <td className="pts-actions">
+                          <button className="pts-btn-edit" onClick={() => openEdit(pt)} title="Modifier">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          </button>
+                          {confirmDel === pt.id ? (
+                            <span className="pts-confirm-del">
+                              <button className="pts-btn-del-ok" onClick={() => handleDelete(pt.id)}>Oui</button>
+                              <button className="pts-btn-cancel" onClick={() => setConfirmDel(null)}>Non</button>
+                            </span>
+                          ) : (
+                            <button className="pts-btn-del" onClick={() => setConfirmDel(pt.id)} title="Supprimer">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <FlashMsg visible={saved} text="Enregistré avec succès" />
+          {error && <p className="pts-error">{error}</p>}
+        </div>
+
+        {/* ── Colonne droite : mini-carte + formulaire ── */}
+        <div className="pts-right">
+          <p className="pts-map-hint">
+            {showForm ? "Cliquez sur le plan pour placer le point, ou saisissez les coordonnées." : "Sélectionnez un point à gauche pour le modifier, ou cliquez sur + Ajouter."}
+          </p>
+          <MiniMap
+            pointsByZone={pointsByZone}
+            highlightZone={selectedZoneId}
+            crosshair={crosshair}
+            onClick={showForm ? handleMapClick : null}
+          />
+
+          {showForm && (
+            <div className="pts-form">
+              <div className="pts-form-title">{editing ? "Modifier le point" : "Nouveau point"}</div>
+
+              <div className="adm-form-grid">
+                <Field label="Identifiant *">
+                  <Inp value={form.id} onChange={setF("id")} placeholder="ex : 1.5.9" readOnly={!!editing} />
+                </Field>
+                <Field label="Libellé (affiché sur la carte)">
+                  <Inp value={form.label} onChange={setF("label")} placeholder="même que l'ID si vide" />
+                </Field>
+                <Field label="Zone *">
+                  <select className="adm-input" value={form.zone_map_id} onChange={e => setF("zone_map_id")(e.target.value)}>
+                    <option value="">-- Choisir une zone --</option>
+                    {ZONES.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Type de prélèvement *">
+                  <select className="adm-input" value={form.point_type} onChange={e => setF("point_type")(e.target.value)}>
+                    {PT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="X — horizontal (0–100 %)">
+                  <Inp value={form.x} onChange={setF("x")} type="number" placeholder="ex : 30.5 (cliquez sur le plan)" />
+                </Field>
+                <Field label="Y — vertical (0–100 %)">
+                  <Inp value={form.y} onChange={setF("y")} type="number" placeholder="ex : 45.0 (cliquez sur le plan)" />
+                </Field>
+                <Field label="Description">
+                  <Inp value={form.description} onChange={setF("description")} placeholder="ex : Surface interne trémie" />
+                </Field>
+              </div>
+
+              {error && <p className="pts-error">{error}</p>}
+
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                <button className="btn-save" onClick={save}>{editing ? "Enregistrer" : "Créer"}</button>
+                <button className="adm-btn-cancel" onClick={cancel}>Annuler</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // ADMIN PAGE — orchestrator
 // ─────────────────────────────────────────────
 const TABS = [
   { id: "zones",  label: "Zones" },
+  { id: "points", label: "Points de prélèvement" },
   { id: "seuils", label: "Seuils" },
   { id: "site",   label: "Infos site" },
   { id: "compte", label: "Mon compte" },
@@ -440,6 +734,7 @@ export default function AdminPage() {
   const renderTab = () => {
     switch (tab) {
       case "zones":  return <ZonesTab />;
+      case "points": return <PointsTab />;
       case "seuils": return <SeuilsTab />;
       case "site":   return <SiteTab />;
       case "compte": return <CompteTab />;
