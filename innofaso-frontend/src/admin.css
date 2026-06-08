@@ -748,6 +748,11 @@
 .pts-form-title { font-size: 13px; font-weight: 700; color: var(--txt); margin-bottom: 12px; }
 .pts-error { color: var(--red); font-size: 12px; font-weight: 600; margin-top: 6px; }
 
+.pts-zone-max { font-size: 12px; font-weight: 600; color: var(--red); background: rgba(239,68,68,.1); padding: 2px 8px; border-radius: 6px; }
+.pts-ufc-max  { color: var(--red); font-weight: 700; }
+.pts-ufc-badge { margin-left: 4px; font-size: 9px; color: var(--red); vertical-align: middle; }
+.pts-ufc-empty { color: var(--txt3); }
+
 .adm-btn-cancel {
   padding: 9px 18px;
   border-radius: 8px;

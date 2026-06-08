@@ -81,9 +81,16 @@ const DEFAULT_POINTS = [
         y           DECIMAL(6,2)  NOT NULL,
         point_type  CHAR(1)       NOT NULL DEFAULT '1',
         description VARCHAR(255)  NOT NULL DEFAULT '',
+        ufc         DECIMAL(8,2)  DEFAULT NULL,
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // Ajoute la colonne ufc si la table existait avant cette feature
+    try {
+      await db.query("ALTER TABLE sampling_points ADD COLUMN ufc DECIMAL(8,2) DEFAULT NULL");
+    } catch (e) {
+      if (!e.message.includes("Duplicate column")) console.warn("ALTER ufc:", e.message);
+    }
     const [[{ cnt }]] = await db.query("SELECT COUNT(*) AS cnt FROM sampling_points");
     if (cnt === 0) {
       for (const p of DEFAULT_POINTS) {

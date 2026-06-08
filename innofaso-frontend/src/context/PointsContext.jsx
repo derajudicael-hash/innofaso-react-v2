@@ -5,13 +5,14 @@ const PointsContext = createContext(null);
 
 function toFrontend(p) {
   return {
-    id:         p.id,
-    zoneMapId:  p.zone_map_id,
-    label:      p.label,
-    x:          Number(p.x),
-    y:          Number(p.y),
-    pointType:  p.point_type,
+    id:          p.id,
+    zoneMapId:   p.zone_map_id,
+    label:       p.label,
+    x:           Number(p.x),
+    y:           Number(p.y),
+    pointType:   p.point_type,
     description: p.description,
+    ufc:         p.ufc !== null && p.ufc !== undefined ? Number(p.ufc) : null,
   };
 }
 
@@ -40,6 +41,14 @@ export function PointsProvider({ children }) {
     return acc;
   }, {});
 
+  // Record<zoneMapId, number|null> — UFC max par zone (null si aucune valeur saisie)
+  const ufcByZone = Object.fromEntries(
+    Object.entries(pointsByZone).map(([zoneId, pts]) => {
+      const measured = pts.filter(p => p.ufc !== null).map(p => p.ufc);
+      return [zoneId, measured.length > 0 ? Math.max(...measured) : null];
+    })
+  );
+
   const addPoint = async (data) => {
     const created = await pointsAPI.create(data);
     setPoints(prev => [...prev, toFrontend(created)]);
@@ -56,7 +65,7 @@ export function PointsProvider({ children }) {
   };
 
   return (
-    <PointsContext.Provider value={{ points, pointsByZone, addPoint, updatePoint, deletePoint, loading, reload: load }}>
+    <PointsContext.Provider value={{ points, pointsByZone, ufcByZone, addPoint, updatePoint, deletePoint, loading, reload: load }}>
       {children}
     </PointsContext.Provider>
   );

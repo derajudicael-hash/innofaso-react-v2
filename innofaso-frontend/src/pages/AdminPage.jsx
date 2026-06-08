@@ -566,21 +566,23 @@ function PointsTab() {
   const { points, pointsByZone, updatePoint } = usePoints();
   const [selectedZoneId, setSelectedZoneId] = useState(ZONES[0]?.id ?? "");
   const [editing, setEditing] = useState(null); // objet point en cours
-  const [draft,   setDraft]   = useState({ x: "", y: "" });
+  const [draft,   setDraft]   = useState({ x: "", y: "", ufc: "" });
   const [error,   setError]   = useState("");
   const [saved,   flashSave]  = useFlash();
 
   const zonePoints = points.filter(p => p.zoneMapId === selectedZoneId);
   const crosshair  = editing && draft.x !== "" && draft.y !== "" ? { x: draft.x, y: draft.y } : null;
 
-  const doUpdate = async (id, x, y) => {
+  const doUpdate = async (id, x, y, ufc) => {
     const pt = points.find(p => p.id === id);
     if (!pt) return;
+    const ufcVal = ufc !== undefined ? ufc : pt.ufc;
     try {
       await updatePoint(id, {
         zone_map_id: pt.zoneMapId, label: pt.label,
         x: Number(x), y: Number(y),
         point_type: pt.pointType, description: pt.description,
+        ufc: ufcVal,
       });
       flashSave();
     } catch (err) {
@@ -597,16 +599,18 @@ function PointsTab() {
 
   const openEdit = (pt) => {
     setEditing(pt);
-    setDraft({ x: String(pt.x), y: String(pt.y) });
+    setDraft({ x: String(pt.x), y: String(pt.y), ufc: pt.ufc !== null ? String(pt.ufc) : "" });
     setError("");
   };
 
-  const cancel = () => { setEditing(null); setDraft({ x: "", y: "" }); setError(""); };
+  const cancel = () => { setEditing(null); setDraft({ x: "", y: "", ufc: "" }); setError(""); };
 
   const save = async () => {
     if (draft.x === "" || draft.y === "") return setError("Coordonnées requises.");
+    if (draft.ufc !== "" && (isNaN(Number(draft.ufc)) || Number(draft.ufc) < 0)) return setError("UFC doit être un nombre positif.");
     setError("");
-    await doUpdate(editing.id, draft.x, draft.y);
+    const ufcVal = draft.ufc !== "" ? Number(draft.ufc) : null;
+    await doUpdate(editing.id, draft.x, draft.y, ufcVal);
     cancel();
   };
 
@@ -627,46 +631,66 @@ function PointsTab() {
             ))}
           </div>
 
-          <div className="pts-list-header">
-            <span>{ZONES.find(z => z.id === selectedZoneId)?.name} — {zonePoints.length} point{zonePoints.length > 1 ? "s" : ""}</span>
-          </div>
+          {(() => {
+            const measured = zonePoints.filter(p => p.ufc !== null);
+            const maxUfc   = measured.length > 0 ? Math.max(...measured.map(p => p.ufc)) : null;
+            return (
+              <div className="pts-list-header">
+                <span>{ZONES.find(z => z.id === selectedZoneId)?.name} — {zonePoints.length} point{zonePoints.length > 1 ? "s" : ""}</span>
+                {maxUfc !== null && (
+                  <span className="pts-zone-max">Max&nbsp;<strong>{maxUfc}</strong>&nbsp;UFC/cm²</span>
+                )}
+              </div>
+            );
+          })()}
 
           {zonePoints.length === 0 ? (
             <p className="pts-empty">Aucun point dans cette zone.</p>
           ) : (
             <div className="pts-table-wrap">
-              <table className="pts-table">
-                <thead>
-                  <tr><th>ID</th><th>Libellé</th><th>Type</th><th>X%</th><th>Y%</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {zonePoints.map(pt => {
-                    const typeInfo  = PT_TYPES.find(t => t.value === pt.pointType);
-                    const isEditing = editing?.id === pt.id;
-                    return (
-                      <tr key={pt.id} className={isEditing ? "pts-row--editing" : ""}>
-                        <td><span className="pts-id">{pt.id}</span></td>
-                        <td>{pt.label}</td>
-                        <td>
-                          <span className="pts-type-dot" style={{ background: typeInfo?.color }} />
-                          T{pt.pointType}
-                        </td>
-                        <td className="pts-num">{isEditing ? draft.x : pt.x}</td>
-                        <td className="pts-num">{isEditing ? draft.y : pt.y}</td>
-                        <td className="pts-actions">
-                          <button className="pts-btn-edit"
-                            onClick={() => isEditing ? cancel() : openEdit(pt)}
-                            title={isEditing ? "Annuler" : "Modifier la position"}>
-                            {isEditing
-                              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              {(() => {
+                const measured = zonePoints.filter(p => p.ufc !== null);
+                const maxUfc   = measured.length > 0 ? Math.max(...measured.map(p => p.ufc)) : null;
+                return (
+                  <table className="pts-table">
+                    <thead>
+                      <tr><th>ID</th><th>Libellé</th><th>Type</th><th>X%</th><th>Y%</th><th>UFC/cm²</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      {zonePoints.map(pt => {
+                        const typeInfo  = PT_TYPES.find(t => t.value === pt.pointType);
+                        const isEditing = editing?.id === pt.id;
+                        const isMax     = pt.ufc !== null && pt.ufc === maxUfc;
+                        return (
+                          <tr key={pt.id} className={isEditing ? "pts-row--editing" : ""}>
+                            <td><span className="pts-id">{pt.id}</span></td>
+                            <td>{pt.label}</td>
+                            <td>
+                              <span className="pts-type-dot" style={{ background: typeInfo?.color }} />
+                              T{pt.pointType}
+                            </td>
+                            <td className="pts-num">{isEditing ? draft.x : pt.x}</td>
+                            <td className="pts-num">{isEditing ? draft.y : pt.y}</td>
+                            <td className={`pts-num${isMax ? " pts-ufc-max" : ""}`}>
+                              {pt.ufc !== null ? pt.ufc : <span className="pts-ufc-empty">—</span>}
+                              {isMax && <span className="pts-ufc-badge" title="Valeur la plus élevée de la zone">▲</span>}
+                            </td>
+                            <td className="pts-actions">
+                              <button className="pts-btn-edit"
+                                onClick={() => isEditing ? cancel() : openEdit(pt)}
+                                title={isEditing ? "Annuler" : "Modifier"}>
+                                {isEditing
+                                  ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
           )}
 
@@ -699,6 +723,9 @@ function PointsTab() {
                 </Field>
                 <Field label="Y — vertical (0–100 %)">
                   <Inp value={draft.y} onChange={(v) => setDraft(d => ({ ...d, y: v }))} type="number" placeholder="ex : 45.0" />
+                </Field>
+                <Field label="UFC/cm² (résultat de labo, optionnel)">
+                  <Inp value={draft.ufc} onChange={(v) => setDraft(d => ({ ...d, ufc: v }))} type="number" placeholder="ex : 24 — laisser vide si non mesuré" />
                 </Field>
               </div>
               {error && <p className="pts-error">{error}</p>}
