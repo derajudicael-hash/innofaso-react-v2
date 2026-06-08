@@ -1,43 +1,57 @@
 # InnoFaso
 
-Plateforme de surveillance microbiologique pour unité de production agroalimentaire — Backend (Express) + Frontend (React/Vite) + Map (Next.js)
+Plateforme de surveillance microbiologique pour unité de production agroalimentaire.
+
+Architecture : **Backend Express.js** + **Frontend React/Vite** + **Carte Next.js**
+
+Normes appliquées : NF EN ISO 18593 / EC 2073/2005 (seuils UFC/cm² par type de surface)
 
 ## Prérequis
 
 - [Node.js](https://nodejs.org/) v18+
-- [XAMPP](https://www.apachefriends.org/) (ou tout autre serveur MySQL)
+- [XAMPP](https://www.apachefriends.org/) (ou tout serveur MySQL)
 
-## Installation et lancement
+## Installation en 4 étapes
 
-> Vérifier que **XAMPP (MySQL) est démarré** avant de commencer.
+> Démarrer **XAMPP → MySQL** avant de continuer.
 
-### 1. Cloner ou télécharger le projet
+### 1. Cloner le projet
 
 ```bash
 git clone https://github.com/derajudicael-hash/innofaso-react-v2.git
 cd innofaso-react-v2
 ```
 
-> Si tu as téléchargé le ZIP depuis GitHub : extraire, puis entrer dans le dossier `innofaso-react-v2-main` à l'intérieur.
-
-### 2. Installer les dépendances
+### 2. Installer toutes les dépendances
 
 ```bash
 npm install
 ```
 
-Installe automatiquement les dépendances des 3 projets (backend, frontend, map).
+Installe automatiquement les dépendances des 3 sous-projets (backend, frontend, map).
 
-### 3. Créer la base de données
+### 3. Configurer la base de données
+
+**Copier le fichier de configuration :**
+
+```bash
+cp innofaso-backend/backend/.env.example innofaso-backend/backend/.env
+```
+
+> Sous Windows (PowerShell) :
+> ```powershell
+> copy innofaso-backend\backend\.env.example innofaso-backend\backend\.env
+> ```
+
+Modifier le `.env` si nécessaire (mot de passe MySQL, port…). Par défaut : `root` sans mot de passe (XAMPP standard).
+
+**Créer la base de données :**
 
 ```bash
 npm run setup
 ```
 
-Crée automatiquement la base de données `innofaso` et toutes ses tables.
-
-> Configuration par défaut : MySQL `root` sans mot de passe (XAMPP standard).
-> Si ta config est différente, ouvre `innofaso-backend/backend/.env` et modifie `DB_PASSWORD`.
+Crée la base `innofaso`, toutes les tables, les 13 zones, les 49 points de prélèvement avec leurs valeurs UFC de démonstration, et les historiques.
 
 ### 4. Lancer le projet
 
@@ -47,10 +61,27 @@ npm run dev
 
 Les 3 services démarrent dans le même terminal :
 
-| Service  | URL                     |
-|----------|-------------------------|
-| API      | http://localhost:4000   |
-| Frontend | http://localhost:5173   |
-| Map      | http://localhost:3000   |
+| Service  | URL                   | Description               |
+|----------|-----------------------|---------------------------|
+| API      | http://localhost:4000 | Backend Express.js        |
+| Frontend | http://localhost:5173 | Dashboard React principal |
+| Map      | http://localhost:3000 | Carte interactive d'usine |
 
 Ouvrir **http://localhost:5173** dans le navigateur.
+
+## Connexion
+
+| Utilisateur | Mot de passe | Rôle           |
+|-------------|--------------|----------------|
+| `admin`     | `password`   | Administrateur |
+| `qualite`   | `password`   | Éditeur        |
+
+## Structure du projet
+
+```
+innofaso-react-v2/
+├── innofaso-backend/backend/   # API Express.js (port 4000)
+├── innofaso-frontend/          # Dashboard React/Vite (port 5173)
+├── map/                        # Carte Next.js (port 3000)
+└── package.json                # Lancement unifié (npm run dev)
+```
