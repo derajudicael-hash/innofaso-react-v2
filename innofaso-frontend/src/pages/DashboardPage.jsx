@@ -69,24 +69,28 @@ export default function DashboardPage() {
   const warnThresh = thresholds?.warning  ?? 40;
 
   const kpiStats = useMemo(() => {
-    // Zones avec données seulement pour les KPI (zones sans mesure = "ok" par défaut)
     const measured = computedZones.filter(z => z.hasData);
     const critCount = computedZones.filter(z => z.status === "critical").length;
     const warnCount = computedZones.filter(z => z.status === "warning").length;
-    const okCount   = computedZones.filter(z => z.status === "ok").length;
+    // Zones non mesurées ≠ conformes : on exclut hasData=false du compte "ok"
+    const okCount   = computedZones.filter(z => z.hasData && z.status === "ok").length;
     const avgUfc    = measured.length
       ? Math.round(measured.reduce((a, z) => a + z.ufc, 0) / measured.length)
       : 0;
 
+    // Tendance : évalue l'avant-dernière mesure avec le seuil propre à chaque zone (pas un seuil global)
     const prevCritCount = computedZones.filter(z => {
+      if (!z.hasData) return false;
       const prev = z.history?.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
-      return prev >= critThresh;
+      return prev >= (z.worstSeuil ?? critThresh);
     }).length;
     const prevWarnCount = computedZones.filter(z => {
-      const prev = z.history?.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
-      return prev >= warnThresh && prev < critThresh;
+      if (!z.hasData) return false;
+      const prev    = z.history?.length >= 2 ? z.history[z.history.length - 2] : z.ufc;
+      const zSeuil  = z.worstSeuil ?? critThresh;
+      return prev >= zSeuil * 0.8 && prev < zSeuil;
     }).length;
-    const prevOkCount = computedZones.length - prevCritCount - prevWarnCount;
+    const prevOkCount = measured.length - prevCritCount - prevWarnCount;
     const prevAvgUfc  = measured.length
       ? Math.round(measured.reduce((a, z) => {
           const prev = z.history?.length >= 2 ? z.history[z.history.length - 2] : z.ufc;

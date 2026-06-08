@@ -27,14 +27,17 @@ export default function AlertsPage() {
 
   const critCount = zones.filter((z) => z.status === "critical").length;
   const warnCount = zones.filter((z) => z.status === "warning").length;
-  const okCount   = zones.filter((z) => z.status === "ok").length;
+  // Zones non mesurées ≠ conformes : on exclut hasData=false du compte "ok"
+  const okCount   = zones.filter((z) => z.hasData && z.status === "ok").length;
 
   const activeAlerts = zones
     .filter((z) => z.status === "critical" || z.status === "warning")
     .sort((a, b) => {
+      // Priorité 1 : critique avant surveillance
       if (a.status === "critical" && b.status !== "critical") return -1;
       if (b.status === "critical" && a.status !== "critical") return 1;
-      return b.ufc - a.ufc;
+      // Priorité 2 : ratio ufc/seuil_type (pas UFC absolu — 13/10=130% > 320/500=64%)
+      return b.worstPct - a.worstPct;
     });
 
   const filtered =
