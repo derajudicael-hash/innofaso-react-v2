@@ -449,26 +449,54 @@ const PT_TYPES = [
 
 const EMPTY_FORM = { id: "", label: "", zone_map_id: "", x: "", y: "", point_type: "1", description: "" };
 
-function MiniMap({ pointsByZone, highlightZone, crosshair, onClick }) {
-  const svgRef = useRef(null);
+// MiniMap — clique pour placer, glisse un point existant pour le déplacer
+function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPointDragEnd, editingId }) {
+  const svgRef   = useRef(null);
+  const dragging = useRef(null); // { id, zoneMapId }
 
-  const handleClick = (e) => {
-    if (!onClick) return;
+  const svgCoords = (e) => {
     const rect = svgRef.current.getBoundingClientRect();
-    const svgX = ((e.clientX - rect.left) / rect.width) * VW;
-    const svgY = ((e.clientY - rect.top) / rect.height) * VH;
-    onClick(
-      Math.min(100, Math.max(0, (svgX / VW) * 100)).toFixed(1),
-      Math.min(100, Math.max(0, (svgY / VH) * 100)).toFixed(1)
-    );
+    return {
+      x: +Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width)  * 100)).toFixed(1),
+      y: +Math.min(100, Math.max(0, ((e.clientY - rect.top)  / rect.height) * 100)).toFixed(1),
+    };
+  };
+
+  const handleSvgClick = (e) => {
+    if (dragging.current) return; // ne pas déclencher click après drag
+    if (!onPlaceClick) return;
+    const { x, y } = svgCoords(e);
+    onPlaceClick(String(x), String(y));
+  };
+
+  const handlePointMouseDown = (e, pt) => {
+    if (!onPointDragEnd) return;
+    e.stopPropagation();
+    dragging.current = { id: pt.id, zoneMapId: pt.zoneMapId };
+  };
+
+  const handleMouseMove = (e) => {
+    if (!dragging.current || !onPointDragEnd) return;
+    // visual feedback only — let the parent update via mouseup
+  };
+
+  const handleMouseUp = (e) => {
+    if (!dragging.current || !onPointDragEnd) return;
+    const { x, y } = svgCoords(e);
+    onPointDragEnd(dragging.current.id, String(x), String(y));
+    dragging.current = null;
   };
 
   return (
     <svg
       ref={svgRef}
       viewBox={`0 0 ${VW} ${VH}`}
-      style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 8, background: "#f9fafb", cursor: onClick ? "crosshair" : "default" }}
-      onClick={handleClick}
+      style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 8, background: "#f9fafb",
+               cursor: onPlaceClick ? "crosshair" : "default", userSelect: "none" }}
+      onClick={handleSvgClick}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
       {ZONES.map(zone => {
         const col = ZONE_COLORS[zone.category] ?? ZONE_COLORS.grey;
@@ -487,11 +515,24 @@ function MiniMap({ pointsByZone, highlightZone, crosshair, onClick }) {
               {zone.name}
             </text>
             {pts.map(pt => {
-              const typeCol = PT_TYPES.find(t => t.value === pt.pointType)?.color ?? "#9ca3af";
+              const typeCol  = PT_TYPES.find(t => t.value === pt.pointType)?.color ?? "#9ca3af";
+              const isActive = editingId === pt.id;
+              const canDrag  = !!onPointDragEnd;
               return (
-                <circle key={pt.id} cx={px(pt.x)} cy={py(pt.y)} r={5}
-                  fill={typeCol} stroke="white" strokeWidth={1.2} opacity={0.9}
-                  style={{ pointerEvents: "none" }} />
+                <g key={pt.id}
+                  style={{ cursor: canDrag ? "grab" : "default" }}
+                  onMouseDown={canDrag ? (e) => handlePointMouseDown(e, { ...pt, zoneMapId: zone.id }) : undefined}
+                >
+                  <circle cx={px(pt.x)} cy={py(pt.y)} r={isActive ? 9 : 6}
+                    fill={typeCol} stroke={isActive ? "#ef4444" : "white"}
+                    strokeWidth={isActive ? 2.5 : 1.5} opacity={0.95} />
+                  {isActive && (
+                    <text x={px(pt.x) + 11} y={py(pt.y) + 4} fontSize="8" fill="#ef4444"
+                      fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
+                      {pt.label}
+                    </text>
+                  )}
+                </g>
               );
             })}
           </g>
@@ -499,9 +540,12 @@ function MiniMap({ pointsByZone, highlightZone, crosshair, onClick }) {
       })}
       {crosshair && (
         <g style={{ pointerEvents: "none" }}>
-          <line x1={px(Number(crosshair.x))} y1={0} x2={px(Number(crosshair.x))} y2={VH} stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" opacity={0.7}/>
-          <line x1={0} y1={py(Number(crosshair.y))} x2={VW} y2={py(Number(crosshair.y))} stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" opacity={0.7}/>
-          <circle cx={px(Number(crosshair.x))} cy={py(Number(crosshair.y))} r={8} fill="#ef4444" stroke="white" strokeWidth={2}/>
+          <line x1={px(Number(crosshair.x))} y1={0} x2={px(Number(crosshair.x))} y2={VH}
+            stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" opacity={0.7}/>
+          <line x1={0} y1={py(Number(crosshair.y))} x2={VW} y2={py(Number(crosshair.y))}
+            stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" opacity={0.7}/>
+          <circle cx={px(Number(crosshair.x))} cy={py(Number(crosshair.y))} r={8}
+            fill="#ef4444" stroke="white" strokeWidth={2}/>
         </g>
       )}
     </svg>
@@ -518,11 +562,29 @@ function PointsTab() {
   const [saved,     flashSave]    = useFlash();
   const [confirmDel, setConfirmDel] = useState(null);
 
-  const selectedZone   = ZONES.find(z => z.id === selectedZoneId);
-  const zonePoints     = points.filter(p => p.zoneMapId === selectedZoneId);
-  const crosshair      = (showForm && form.x && form.y) ? { x: form.x, y: form.y } : null;
+  const selectedZone = ZONES.find(z => z.id === selectedZoneId);
+  const zonePoints   = points.filter(p => p.zoneMapId === selectedZoneId);
+  const crosshair    = (showForm && form.x && form.y) ? { x: form.x, y: form.y } : null;
 
   const setF = (k) => (val) => setForm(prev => ({ ...prev, [k]: val }));
+
+  // Drag d'un point existant directement sur la mini-carte (hors mode formulaire)
+  const handlePointDragEnd = async (id, x, y) => {
+    const pt = points.find(p => p.id === id);
+    if (!pt) return;
+    setError("");
+    try {
+      await updatePoint(id, {
+        zone_map_id: pt.zoneMapId, label: pt.label,
+        x: Number(x), y: Number(y),
+        point_type: pt.pointType, description: pt.description,
+      });
+      flashSave();
+    } catch (err) {
+      const msg = err.message || "";
+      setError(msg.includes("Token") ? "Session expirée — déconnectez-vous et reconnectez-vous." : msg);
+    }
+  };
 
   const openAdd = () => {
     setEditing(null);
@@ -572,7 +634,8 @@ function PointsTab() {
       flashSave();
       setSelectedZoneId(form.zone_map_id);
     } catch (err) {
-      setError(err.message || "Erreur lors de la sauvegarde.");
+      const msg = err.message || "";
+      setError(msg.includes("Token") ? "Session expirée — déconnectez-vous et reconnectez-vous." : msg || "Erreur lors de la sauvegarde.");
     }
   };
 
@@ -660,13 +723,17 @@ function PointsTab() {
         {/* ── Colonne droite : mini-carte + formulaire ── */}
         <div className="pts-right">
           <p className="pts-map-hint">
-            {showForm ? "Cliquez sur le plan pour placer le point, ou saisissez les coordonnées." : "Sélectionnez un point à gauche pour le modifier, ou cliquez sur + Ajouter."}
+            {showForm
+              ? "Cliquez sur le plan pour placer le point, ou saisissez les coordonnées manuellement."
+              : "Glissez un point sur le plan pour le déplacer. Cliquez sur Modifier pour éditer ses informations."}
           </p>
           <MiniMap
             pointsByZone={pointsByZone}
             highlightZone={selectedZoneId}
             crosshair={crosshair}
-            onClick={showForm ? handleMapClick : null}
+            editingId={editing}
+            onPlaceClick={showForm ? handleMapClick : null}
+            onPointDragEnd={!showForm ? handlePointDragEnd : null}
           />
 
           {showForm && (
