@@ -73,11 +73,11 @@ INSERT INTO site_info (key_name, key_value) VALUES
 ON DUPLICATE KEY UPDATE key_value = VALUES(key_value);
 
 INSERT INTO admin_users (username, password, name, role) VALUES
-('admin',   '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrateur Principal', 'superadmin'),
-('qualite', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Responsable Qualite',      'editor')
-ON DUPLICATE KEY UPDATE name = VALUES(name);
+('admin',   '$2a$10$OGU2J9TqwfhDvpIChmCXGe8Ug.GBuOWq.JHYD2fbPv6Kpv0VFGOle', 'Administrateur Principal', 'superadmin'),
+('qualite', '$2a$10$ZpzC8jU9CXi9kAWx497LvOOyUvZ2qE8rCeIrKiLGV79kgeBcW5era', 'Responsable Qualite',      'editor')
+ON DUPLICATE KEY UPDATE password = VALUES(password), name = VALUES(name), role = VALUES(role);
 
--- ── 13 zones de l'usine (IDs = factory-hygiene zone IDs) ──────────────────
+-- ── 14 zones de l'usine (IDs = factory-hygiene zone IDs) ──────────────────
 INSERT INTO zones (map_id, label, status, ufc, seuil, responsible, last_check, next_check, alert_cls, alert_title, alert_desc) VALUES
 ('stockage_pf',       'Stockage Produits Finis',  'ok',       85,  500, 'Ouedraogo Paul',    '06/06/2026 06:30', '06/06/2026 14:30', 'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
 ('conditionnement',   'Conditionnement',           'ok',        4,   10, 'Sawadogo Marie',    '06/06/2026 06:45', '06/06/2026 14:45', 'good', 'Zone conforme',        'Excellente maîtrise de la contamination.'),
@@ -91,7 +91,8 @@ INSERT INTO zones (map_id, label, status, ufc, seuil, responsible, last_check, n
 ('vestiaire_laverie', 'Vestiaire Laverie',          'ok',      180,  500, 'Traore Amina',      '06/06/2026 08:45', '06/06/2026 16:45', 'good', 'Zone conforme',        'Niveaux dans les limites.'),
 ('vestiaires_h',      'Vestiaires H',               'ok',      290,  500, 'Ouedraogo Paul',    '06/06/2026 09:00', '06/06/2026 17:00', 'good', 'Zone conforme',        'Niveaux dans les limites.'),
 ('vestiaires_visiteur','Vestiaires Visiteur',        'warning', 415,  500, 'Compaore Jean',     '06/06/2026 09:15', '06/06/2026 13:15', 'warn', 'Surveillance requise', 'Niveau élevé — vérifier hygiène visiteurs.'),
-('vestiaires_f',      'Vestiaires F',               'ok',      150,  500, 'Sawadogo Marie',    '06/06/2026 09:30', '06/06/2026 17:30', 'good', 'Zone conforme',        'Niveaux dans les limites.');
+('vestiaires_f',      'Vestiaires F',               'ok',      150,  500, 'Sawadogo Marie',    '06/06/2026 09:30', '06/06/2026 17:30', 'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('labo_microbiologie','Labo Microbiologie',         'ok',        0,  500, 'Zongo Mariam',      '06/06/2026 09:45', '06/06/2026 17:45', 'good', 'Zone conforme',        'Niveaux dans les limites.');
 
 -- ── Points de prélèvement ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sampling_points (
@@ -114,30 +115,48 @@ INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, descripti
 ('1.5.3',   'conditionnement',    '1.5.3',  26.50, 31.50, '1', 'Surface interne tremie cond. 4',    4),
 ('1.5.4',   'conditionnement',    '1.5.4',  26.50, 38.50, '1', 'Col formateur conditionneuse 1',    6),
 ('1.5.6',   'conditionnement',    '1.5.6',  26.50, 45.50, '1', 'Col formateur conditionneuse L4A',  7),
+('1.5.9',   'conditionnement',    '1.5.9',  26.50, 52.50, '1', 'Canne de dosage des ensacheuses 2', NULL),
+('1.5.11',  'conditionnement',    '1.5.11', 26.50, 59.50, '1', 'Canne de dosage des ensacheuses L4B', NULL),
 ('1.5.3r',  'conditionnement',    '1.5.3',  36.50, 17.50, '1', 'Tremie cond. 4 R',                  5),
 ('1.5.6r',  'conditionnement',    '1.5.6',  36.50, 24.50, '1', 'Col formateur L4A R',               3),
 ('1.5.7',   'conditionnement',    '1.5.7',  36.50, 31.50, '1', 'Col formateur conditionneuse L4B',  9),
 ('1.5.8',   'conditionnement',    '1.5.8',  36.50, 38.50, '1', 'Canne dosage ensacheuses 1',        4),
+('1.5.5',   'conditionnement',    '1.5.5',  36.50, 45.50, '1', 'Col formateur de la conditionneuse 2', NULL),
+('1.5.10',  'conditionnement',    '1.5.10', 36.50, 52.50, '1', 'Canne de dosage des ensacheuses L4A', NULL),
 ('2.5.1',   'conditionnement',    '2.5.1',  30.50, 57.00, '2', 'Scotcheuse automatique',           22),
+('2.5.2',   'conditionnement',    '2.5.2',  36.50, 59.50, '2', 'Armoire de commande en zone de production', NULL),
+('2.5.3',   'conditionnement',    '2.5.3',  26.50, 66.50, '2', 'Tapis du convoyeur L1',            NULL),
 ('3.5.1',   'conditionnement',    '3.5.1',  30.50, 70.00, '3', 'Tapis convoyeur conditionnement',  45),
+('3.5.2',   'conditionnement',    '3.5.2',  36.50, 66.50, '3', 'Bureau chef de quart',             NULL),
+('3.5.3',   'conditionnement',    '3.5.3',  30.50, 74.00, '3', 'Interrupteur zone production conditionnement', NULL),
 ('1.2.1',   'melange',            '1.2.1',  45.50, 22.00, '1', 'Tremie incorporation melange',      7),
 ('1.2.2',   'melange',            '1.2.2',  52.00, 22.00, '1', 'Vanne filtre melange poudre',       6),
+('1.2.3',   'melange',            '1.2.3',  52.00, 27.50, '1', 'Mains d''un operateur melange poudre', NULL),
 ('2.2.1',   'melange',            '2.2.1',  45.50, 33.00, '2', 'Exterieur melangeur poudre',       35),
+('2.2.2',   'melange',            '2.2.2',  45.50, 40.00, '2', 'Grille de soufflage CTA melange poudre', NULL),
+('2.2.3',   'melange',            '2.2.3',  52.00, 47.50, '2', 'Grille de reprise CTA melange poudre', NULL),
+('2.2.4',   'melange',            '2.2.4',  45.50, 47.50, '2', 'Distributeur desinfectant main (entree salle melange)', NULL),
 ('3.2.2',   'melange',            '3.2.2',  52.00, 40.00, '3', 'Mur zone melange poudre',          62),
 ('3.2.1',   'melange',            '3.2.1',  46.50, 56.00, '3', 'Sol zone melange poudre',          78),
+('3.2.3',   'melange',            '3.2.3',  52.00, 56.00, '3', 'Outils de nettoyage en zone de melange poudre', NULL),
+('3.2.4',   'melange',            '3.2.4',  45.50, 62.00, '3', 'Uniforme des operateurs melange poudre', NULL),
+('3.2.5',   'melange',            '3.2.5',  52.00, 62.00, '3', 'Chaussures des operateurs melange poudre', NULL),
 ('1.4.1',   'premix',             '1.4.1',  59.50, 10.50, '1', 'Cuve tampon premelange',          8.5),
 ('1.4.2',   'premix',             '1.4.2',  66.00, 10.50, '1', 'Tremie premelange',                 6),
 ('2.4.1',   'premix',             '2.4.1',  59.50, 28.00, '2', 'Exterieur pre-melangeur',          43),
+('3.4.1',   'premix',             '3.4.1',  66.00, 40.00, '3', 'Cle a ergot des broyeurs premelange', NULL),
 ('3.4.2',   'premix',             '3.4.2',  67.00, 28.00, '3', 'Escabot en pre-melange',           55),
 ('1.1.1',   'pesage',             '1.1.1',  58.50, 56.00, '1', 'Couteaux salle pesee melange',     11),
 ('2.1.2',   'pesage',             '2.1.2',  65.00, 56.00, '2', 'Plateau balance pesee melange',    28),
 ('2.1.1',   'pesage',             '2.1.1',  58.50, 65.50, '2', 'Bras aspirante dust-collector',    31),
+('2.1.3',   'pesage',             '2.1.3',  61.50, 60.50, '2', 'Manche (corde) porte rapide pesee melange', NULL),
 ('2.1.4',   'pesage',             '2.1.4',  65.00, 65.50, '2', 'Coffret porte rapide pesee',       19),
 ('3.1.1',   'pesage',             '3.1.1',  61.50, 72.50, '3', 'Palette plastique pesee lait',     48),
 ('1.3.1',   'huile',              '1.3.1',  74.50, 18.00, '1', 'Seau pesee premelange',             5),
-('2.3.1a',  'huile',              '2.3.1',  74.50, 30.00, '2', 'Balance pesee pre-melange',        24),
+('2.3.1',   'huile',              '2.3.1',  74.50, 30.00, '2', 'Balance pesee pre-melange',        24),
 ('2.3.1b',  'huile',              '2.3.1',  81.00, 30.00, '2', 'Balance pesee pre-melange bis',    17),
 ('3.3.1',   'huile',              '3.3.1',  81.00, 42.00, '3', 'Palette plastique premelange',     38),
+('3.3.2',   'huile',              '3.3.2',  74.50, 42.00, '3', 'Support des outils de nettoyage de pesee premelange', NULL),
 ('3.6.2',   'sas_poudres',        '3.6.2',  74.50, 63.00, '3', 'Mur SAS melange poudre',           84),
 ('3.6.1',   'sas_poudres',        '3.6.1',  80.50, 70.00, '3', 'Sol SAS melange poudre',           92),
 ('4.11.2',  'matieres_premieres', '4.11.2', 94.00, 22.00, '4', 'Prelevement matieres premieres',  180),
@@ -148,16 +167,55 @@ INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, descripti
 ('4.18.1',  'vestiaire_laverie',  '4.18.1',  5.50, 82.00, '4', 'Poigne vestiaire laverie',         95),
 ('4.18.2',  'vestiaire_laverie',  '4.18.2',  5.50, 90.00, '4', 'Sol vestiaire laverie',           165),
 ('4.18.3',  'vestiaire_laverie',  '4.18.3', 13.50, 86.00, '4', 'Distributeur vestiaire laverie',  120),
+('4.18.4',  'vestiaire_laverie',  '4.18.4', 13.50, 94.00, '4', 'Chariot laverie',                  NULL),
+('4.18.5',  'vestiaire_laverie',  '4.18.5',  5.50, 96.00, '4', 'Poudre du dust collector',          NULL),
 ('4.14.1',  'vestiaires_h',       '4.14.1', 45.50, 82.50, '4', 'Banc homme',                       78),
-('4.14.2a', 'vestiaires_h',       '4.14.2', 51.50, 82.50, '4', 'Poignet vestiaire homme',         110),
+('4.14.2',  'vestiaires_h',       '4.14.2', 51.50, 82.50, '4', 'Poignet vestiaire homme',         110),
 ('4.14.2b', 'vestiaires_h',       '4.14.2', 48.50, 92.00, '4', 'Poignet vestiaire homme bis',     130),
-('4.16.3a', 'vestiaires_visiteur','4.16.3', 58.50, 82.50, '4', 'Sols vestiaire visiteur',         220),
+('4.14.3',  'vestiaires_h',       '4.14.3', 45.50, 92.00, '4', 'Sols de vestiaire homme',          NULL),
+('4.14.4',  'vestiaires_h',       '4.14.4', 51.50, 96.00, '4', 'Distributeur desinfectant homme',  NULL),
+('4.16.3',  'vestiaires_visiteur','4.16.3', 58.50, 82.50, '4', 'Sols vestiaire visiteur',         220),
 ('4.16.1',  'vestiaires_visiteur','4.16.1', 65.00, 82.50, '4', 'Banc visiteur',                   195),
 ('4.16.3b', 'vestiaires_visiteur','4.16.3', 61.50, 92.00, '4', 'Sols vestiaire visiteur bis',     240),
+('4.16.2',  'vestiaires_visiteur','4.16.2', 65.00, 92.00, '4', 'Poignet vestiaire visiteur',        NULL),
+('4.16.4',  'vestiaires_visiteur','4.16.4', 58.50, 96.00, '4', 'Distributeur desinfectant visiteur', NULL),
 ('4.15.1',  'vestiaires_f',       '4.15.1', 71.50, 82.50, '4', 'Banc femme',                       88),
 ('4.15.2',  'vestiaires_f',       '4.15.2', 78.00, 82.50, '4', 'Poignet vestiaire femme',          95),
-('4.15.3',  'vestiaires_f',       '4.15.3', 74.50, 92.00, '4', 'Sols vestiaire femme',            105)
+('4.15.3',  'vestiaires_f',       '4.15.3', 74.50, 92.00, '4', 'Sols vestiaire femme',            105),
+('4.15.4',  'vestiaires_f',       '4.15.4', 78.00, 92.00, '4', 'Distributeur desinfectant femme',  NULL),
+('4.17.1',  'labo_microbiologie', '4.17.1', 85.00, 84.00, '4', 'Paillasse labo microbiologie',     NULL),
+('4.17.2',  'labo_microbiologie', '4.17.2', 87.50, 84.00, '4', 'Equipement labo microbiologie',     NULL),
+('4.17.3',  'labo_microbiologie', '4.17.3', 86.30, 93.00, '4', 'Sol labo microbiologie',            NULL)
 ON DUPLICATE KEY UPDATE ufc=VALUES(ufc);
+
+-- ── Journal des imports de bulletins + historique par point ────────────────
+-- Fondation de la refonte de l'historique (juin 2026) : sert à la fois aux
+-- courbes par point (une ligne par point fixe) et a l'annulation d'un import
+-- (avant/apres par point). Demarre vide volontairement (reset decide avec
+-- l'utilisateur) : aucune donnee de seed ici.
+CREATE TABLE IF NOT EXISTS import_batches (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  filename      VARCHAR(255) NOT NULL,
+  imported_by   VARCHAR(100) NOT NULL,
+  imported_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  result_count  INT NOT NULL DEFAULT 0,
+  status        ENUM('actif','annule') NOT NULL DEFAULT 'actif',
+  cancelled_at  TIMESTAMP NULL DEFAULT NULL,
+  cancelled_by  VARCHAR(100) NULL DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS point_history (
+  id                  INT AUTO_INCREMENT PRIMARY KEY,
+  point_id            VARCHAR(20) NOT NULL,
+  import_id           INT NULL,
+  ufc_before          DECIMAL(8,2) NULL,
+  ufc_after           DECIMAL(8,2) NULL,
+  salmonella_detected TINYINT(1) NULL,
+  recorded_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (import_id) REFERENCES import_batches(id) ON DELETE CASCADE,
+  FOREIGN KEY (point_id)  REFERENCES sampling_points(id) ON DELETE CASCADE,
+  INDEX idx_point_recorded (point_id, recorded_at)
+);
 
 -- ── Historique 7 jours ───────────────────────────────────────────────────
 INSERT INTO zone_history (zone_id, ufc) VALUES (1,90),(1,88),(1,86),(1,84),(1,87),(1,85),(1,85);
@@ -173,3 +231,4 @@ INSERT INTO zone_history (zone_id, ufc) VALUES (10,185),(10,182),(10,180),(10,17
 INSERT INTO zone_history (zone_id, ufc) VALUES (11,280),(11,285),(11,290),(11,288),(11,292),(11,290),(11,290);
 INSERT INTO zone_history (zone_id, ufc) VALUES (12,380),(12,390),(12,400),(12,405),(12,410),(12,415),(12,415);
 INSERT INTO zone_history (zone_id, ufc) VALUES (13,155),(13,152),(13,150),(13,148),(13,150),(13,150),(13,150);
+INSERT INTO zone_history (zone_id, ufc) VALUES (14,0),(14,0),(14,0),(14,0),(14,0),(14,0),(14,0);

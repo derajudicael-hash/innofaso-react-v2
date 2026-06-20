@@ -67,8 +67,8 @@ Ouvrir **http://localhost:5173** dans le navigateur.
 
 | Utilisateur | Mot de passe | Rôle           |
 |-------------|--------------|----------------|
-| `admin`     | `password`   | Administrateur |
-| `qualite`   | `password`   | Éditeur        |
+| `admin`     | `Admin2026!` | Administrateur |
+| `qualite`   | `Qualite123!`| Éditeur        |
 
 ## Structure du projet
 

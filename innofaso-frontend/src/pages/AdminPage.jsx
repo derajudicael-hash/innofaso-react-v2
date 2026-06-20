@@ -2,9 +2,9 @@ import { useState, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { usePoints } from "../context/PointsContext";
-import { authAPI } from "../services/api";
-import { pointStatus } from "../hooks/useComputedZones";
-import { ZONES } from "../map/factoryData";
+import { usePersistedFiles } from "../map/usePersistedFiles.js";
+import { pointStatus, resultUfc } from "../hooks/useComputedZones";
+import { ZONES, isRandomPointId } from "../map/factoryData.js";
 import Icon from "../components/Icon";
 
 // ─── Shared UI atoms ──────────────────────────
@@ -70,6 +70,7 @@ function ZonesTab() {
   const [draft,   setDraft]   = useState({});
   const [saved,   flashSave]  = useFlash();
   const [confirmDel, setConfirmDel] = useState(null);
+  const [error,   setError]   = useState("");
 
   // Zones avec UFC et statut calculés selon ISO 18593 (seuils par type de point)
   const displayZones = useMemo(() => {
@@ -86,21 +87,26 @@ function ZonesTab() {
     });
   }, [zones, pointsByZone]);
 
-  const startEdit = (z) => { setEditing(z.id); setDraft({ ...z }); };
-  const cancelEdit = () => { setEditing(null); setDraft({}); };
+  const startEdit = (z) => { setEditing(z.id); setDraft({ ...z }); setError(""); };
+  const cancelEdit = () => { setEditing(null); setDraft({}); setError(""); };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const z = displayZones.find(z => z.id === draft.id);
-    updateZone(draft.id, {
-      label:       draft.label,
-      ufc:         z?.ufc ?? 0,
-      responsible: draft.responsible,
-      lastCheck:   draft.lastCheck,
-      nextCheck:   draft.nextCheck,
-      seuil:       Number(draft.seuil),
-    });
-    cancelEdit();
-    flashSave();
+    try {
+      await updateZone(draft.id, {
+        label:       draft.label,
+        ufc:         z?.ufc ?? 0,
+        responsible: draft.responsible,
+        lastCheck:   draft.lastCheck,
+        nextCheck:   draft.nextCheck,
+        seuil:       Number(draft.seuil),
+      });
+      setError("");
+      cancelEdit();
+      flashSave();
+    } catch (e) {
+      setError(e.message || "Erreur lors de l'enregistrement.");
+    }
   };
 
   return (
@@ -123,6 +129,7 @@ function ZonesTab() {
           <div key={z.id} className={`adm-zone-row${editing === z.id ? " adm-zone-row--editing" : ""}`}>
             {editing === z.id ? (
               <div className="adm-zone-edit-form">
+                {error && <div className="adm-error-msg">{error}</div>}
                 <div className="adm-form-grid">
                   <Field label="Nom">
                     <Inp value={draft.label} onChange={(v) => setDraft((p) => ({ ...p, label: v }))} />
@@ -183,14 +190,18 @@ function SeuilsTab() {
   const [saved, flashSave]  = useFlash();
   const [error, setError]   = useState("");
 
-  const save = () => {
+  const save = async () => {
     const c = Number(draft.critical);
     const w = Number(draft.warning);
     if (w >= c) { setError("Le seuil de surveillance doit être inférieur au seuil critique."); return; }
     if (c <= 0 || w <= 0) { setError("Les seuils doivent être des valeurs positives."); return; }
-    setError("");
-    setThresholds({ critical: c, warning: w });
-    flashSave();
+    try {
+      await setThresholds({ critical: c, warning: w });
+      setError("");
+      flashSave();
+    } catch (e) {
+      setError(e.message || "Erreur lors de l'enregistrement.");
+    }
   };
 
   return (
@@ -258,126 +269,7 @@ function SeuilsTab() {
 }
 
 // ─────────────────────────────────────────────
-// TAB 3 — INFOS SITE
-// ─────────────────────────────────────────────
-function SiteTab() {
-  const { siteInfo, setSiteInfo } = useAdminData();
-  const [draft, setDraft]  = useState({ ...siteInfo });
-  const [saved, flashSave] = useFlash();
-  const set = (k) => (v) => setDraft((p) => ({ ...p, [k]: v }));
-
-  const save = () => { setSiteInfo({ ...draft }); flashSave(); };
-
-  return (
-    <div className="adm-tab-body">
-      <SectionTitle>Informations du site</SectionTitle>
-      <Desc>Ces informations apparaissent dans l'en-tête du tableau de bord et dans les rapports exportés.</Desc>
-
-      <div className="adm-form-grid">
-        <Field label="Nom de l'usine">
-          <Inp value={draft.name}    onChange={set("name")}    placeholder="Nom du site" />
-        </Field>
-        <Field label="Ville">
-          <Inp value={draft.city}    onChange={set("city")}    placeholder="Ville" />
-        </Field>
-        <Field label="Pays">
-          <Inp value={draft.country} onChange={set("country")} placeholder="Pays" />
-        </Field>
-        <Field label="Email de contact">
-          <Inp type="email" value={draft.contact} onChange={set("contact")} placeholder="email@site.com" />
-        </Field>
-        <Field label="Téléphone">
-          <Inp value={draft.phone}   onChange={set("phone")}   placeholder="+226 00 00 00 00" />
-        </Field>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
-        <button className="btn-save" onClick={save}>Enregistrer</button>
-        <FlashMsg visible={saved} text="Informations mises à jour" />
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// TAB 4 — MON COMPTE
-// ─────────────────────────────────────────────
-function CompteTab() {
-  const { user } = useAuth();
-  const [fields,  setFields]  = useState({ old: "", new: "", confirm: "" });
-  const [msg,     setMsg]     = useState(null);
-  const [saving,  setSaving]  = useState(false);
-
-  const set = (k) => (e) => setFields((p) => ({ ...p, [k]: e.target.value }));
-
-  const savePassword = async () => {
-    const { old: o, new: n, confirm: c } = fields;
-    if (!o || !n || !c)    { setMsg({ err: true, text: "Remplissez tous les champs." }); return; }
-    if (n !== c)            { setMsg({ err: true, text: "Les mots de passe ne correspondent pas." }); return; }
-    if (n.length < 8)       { setMsg({ err: true, text: "Minimum 8 caractères requis." }); return; }
-    setSaving(true);
-    try {
-      await authAPI.changePassword(o, n);
-      setMsg({ err: false, text: "Mot de passe modifié avec succès." });
-      setFields({ old: "", new: "", confirm: "" });
-    } catch (err) {
-      setMsg({ err: true, text: err.message || "Mot de passe actuel incorrect." });
-    } finally {
-      setSaving(false);
-      setTimeout(() => setMsg(null), 4000);
-    }
-  };
-
-  const roleLabel = user?.role === "superadmin" ? "Super Administrateur" : "Éditeur";
-  const roleColor = user?.role === "superadmin" ? "#ef4444" : "#f97316";
-
-  return (
-    <div className="adm-tab-body">
-      {/* Profile card */}
-      <div className="adm-profile-card">
-        <div className="adm-profile-avatar">{user?.name?.[0] ?? "A"}</div>
-        <div className="adm-profile-info">
-          <div className="adm-profile-name">{user?.name}</div>
-          <div className="adm-profile-role" style={{ color: roleColor }}>{roleLabel}</div>
-          <div className="adm-profile-login">@{user?.username}</div>
-        </div>
-      </div>
-
-      <SectionTitle>Changer le mot de passe</SectionTitle>
-
-      {msg && (
-        <div className={`adm-msg-box ${msg.err ? "adm-msg-err" : "adm-msg-ok"}`}>
-          {msg.text}
-        </div>
-      )}
-
-      <div className="adm-form-grid" style={{ maxWidth: 420 }}>
-        {[
-          { label: "Mot de passe actuel",          key: "old" },
-          { label: "Nouveau mot de passe",          key: "new" },
-          { label: "Confirmer le nouveau mot de passe", key: "confirm" },
-        ].map(({ label, key }) => (
-          <Field key={key} label={label}>
-            <input
-              className="adm-input"
-              type="password"
-              value={fields[key]}
-              onChange={set(key)}
-              placeholder="••••••••"
-            />
-          </Field>
-        ))}
-      </div>
-
-      <button className="btn-save" onClick={savePassword} disabled={saving}>
-        {saving ? "Modification…" : "Changer le mot de passe"}
-      </button>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// TAB 5 — POINTS DE PRELEVEMENT
+// TAB 3 — POINTS DE PRELEVEMENT
 // ─────────────────────────────────────────────
 const VW = 1515, VH = 490;
 const px = (p) => (p / 100) * VW;
@@ -514,15 +406,39 @@ function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPoint
 }
 
 function PointsTab() {
-  const { points, pointsByZone, updatePoint } = usePoints();
+  const { points, pointsByZone, updatePoint, addPoint, deletePoint } = usePoints();
+  const { activeResults } = usePersistedFiles();
   const [selectedZoneId, setSelectedZoneId] = useState(ZONES[0]?.id ?? "");
   const [editing, setEditing] = useState(null); // objet point en cours
   const [draft,   setDraft]   = useState({ x: "", y: "", ufc: "" });
   const [error,   setError]   = useState("");
   const [saved,   flashSave]  = useFlash();
 
-  const zonePoints = points.filter(p => p.zoneMapId === selectedZoneId);
-  const crosshair  = editing && draft.x !== "" && draft.y !== "" ? { x: draft.x, y: draft.y } : null;
+  const [creating, setCreating]       = useState(false);
+  const [createDraft, setCreateDraft] = useState({ type: "1", x: "", y: "", label: "", description: "" });
+  const [createError, setCreateError] = useState("");
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deleteError, setDeleteError]          = useState("");
+
+  // Fusionne le bulletin actuellement chargé (localStorage, non garanti synchronisé
+  // côté serveur) avec l'UFC déjà persisté — même logique que useComputedZones,
+  // pour que l'admin voie toujours l'état le plus à jour, salmonelles incluses.
+  const zonePoints = points
+    .filter(p => p.zoneMapId === selectedZoneId)
+    .map(pt => {
+      const liveResults  = activeResults?.get(pt.id) ?? [];
+      const liveUfc      = resultUfc(liveResults);
+      const salmoDetected = liveResults.some(r => r.parameter === "salmonelles" && r.detected === true);
+      return {
+        ...pt,
+        displayUfc: liveUfc ?? pt.ufc,
+        hasLiveData: liveResults.length > 0,
+        salmoDetected,
+      };
+    });
+  const crosshair  = editing  && draft.x !== "" && draft.y !== ""       ? { x: draft.x, y: draft.y } : null;
+  const createCrosshair = creating && createDraft.x !== "" && createDraft.y !== "" ? { x: createDraft.x, y: createDraft.y } : null;
 
   const doUpdate = async (id, x, y, ufc) => {
     const pt = points.find(p => p.id === id);
@@ -549,6 +465,7 @@ function PointsTab() {
   const handleMapClick = (x, y) => setDraft(d => ({ ...d, x, y }));
 
   const openEdit = (pt) => {
+    cancelCreate();
     setEditing(pt);
     setDraft({ x: String(pt.x), y: String(pt.y), ufc: pt.ufc !== null ? String(pt.ufc) : "" });
     setError("");
@@ -565,6 +482,68 @@ function PointsTab() {
     cancel();
   };
 
+  // ── Points aléatoires : création ──────────────────────────
+  const nextSeqForType = (type) => {
+    const seqs = points
+      .filter(p => isRandomPointId(p.id) && p.id.split(".")[0] === type)
+      .map(p => Number(p.id.split(".")[1]))
+      .filter(n => !Number.isNaN(n));
+    return seqs.length > 0 ? Math.max(...seqs) + 1 : 1;
+  };
+
+  const startCreate = () => {
+    cancel();
+    setCreateError("");
+    setCreateDraft({ type: "1", x: "", y: "", label: "", description: "" });
+    setCreating(true);
+  };
+
+  const cancelCreate = () => {
+    setCreating(false);
+    setCreateError("");
+    setCreateDraft({ type: "1", x: "", y: "", label: "", description: "" });
+  };
+
+  const handleCreateMapClick = (x, y) => setCreateDraft(d => ({ ...d, x, y }));
+
+  const submitCreate = async () => {
+    if (createDraft.x === "" || createDraft.y === "") return setCreateError("Cliquez sur le plan pour placer le point.");
+    if (!createDraft.description.trim()) return setCreateError("Description requise.");
+    const seq = nextSeqForType(createDraft.type);
+    const id  = `${createDraft.type}.${seq}`;
+    setCreateError("");
+    try {
+      await addPoint({
+        id,
+        zone_map_id: selectedZoneId,
+        label: createDraft.label.trim() || id,
+        x: Number(createDraft.x), y: Number(createDraft.y),
+        point_type: createDraft.type,
+        description: createDraft.description.trim(),
+        ufc: null,
+      });
+      cancelCreate();
+      flashSave();
+    } catch (err) {
+      setCreateError(err.message || "Erreur lors de la création du point.");
+    }
+  };
+
+  // ── Points aléatoires : suppression ───────────────────────
+  const confirmDelete = async (id) => {
+    setDeleteError("");
+    try {
+      await deletePoint(id);
+      setConfirmDeleteId(null);
+      if (editing?.id === id) cancel();
+    } catch (err) {
+      setDeleteError(err.message || "Erreur lors de la suppression du point.");
+    }
+  };
+
+  const measuredPoints = zonePoints.filter(p => p.displayUfc !== null && p.displayUfc !== undefined);
+  const maxUfcInZone   = measuredPoints.length > 0 ? Math.max(...measuredPoints.map(p => p.displayUfc)) : null;
+
   return (
     <div className="adm-tab-body">
       <div className="pts-layout">
@@ -575,58 +554,66 @@ function PointsTab() {
             {ZONES.map(z => (
               <button key={z.id}
                 className={`pts-zone-btn${selectedZoneId === z.id ? " pts-zone-btn--active" : ""}`}
-                onClick={() => { setSelectedZoneId(z.id); cancel(); }}>
+                onClick={() => { setSelectedZoneId(z.id); cancel(); cancelCreate(); }}>
                 {z.name}
                 <span className="pts-zone-count">{pointsByZone[z.id]?.length ?? 0}</span>
               </button>
             ))}
           </div>
 
-          {(() => {
-            const measured = zonePoints.filter(p => p.ufc !== null);
-            const maxUfc   = measured.length > 0 ? Math.max(...measured.map(p => p.ufc)) : null;
-            return (
-              <div className="pts-list-header">
-                <span>{ZONES.find(z => z.id === selectedZoneId)?.name} — {zonePoints.length} point{zonePoints.length > 1 ? "s" : ""}</span>
-                {maxUfc !== null && (
-                  <span className="pts-zone-max">Max&nbsp;<strong>{maxUfc}</strong>&nbsp;UFC/cm²</span>
-                )}
-              </div>
-            );
-          })()}
+          <div className="pts-list-header">
+            <span>{ZONES.find(z => z.id === selectedZoneId)?.name} — {zonePoints.length} point{zonePoints.length > 1 ? "s" : ""}</span>
+            {maxUfcInZone !== null && (
+              <span className="pts-zone-max">Max&nbsp;<strong>{maxUfcInZone}</strong>&nbsp;UFC/cm²</span>
+            )}
+          </div>
+
+          <button className="btn-add" onClick={startCreate} disabled={creating}>
+            <Icon name="plus" size={13} strokeWidth={2.5} /> Point aléatoire
+          </button>
 
           {zonePoints.length === 0 ? (
             <p className="pts-empty">Aucun point dans cette zone.</p>
           ) : (
             <div className="pts-table-wrap">
-              {(() => {
-                const measured = zonePoints.filter(p => p.ufc !== null);
-                const maxUfc   = measured.length > 0 ? Math.max(...measured.map(p => p.ufc)) : null;
-                return (
-                  <table className="pts-table">
-                    <thead>
-                      <tr><th>ID</th><th>Libellé</th><th>Type</th><th>X%</th><th>Y%</th><th>UFC/cm²</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                      {zonePoints.map(pt => {
-                        const typeInfo  = PT_TYPES.find(t => t.value === pt.pointType);
-                        const isEditing = editing?.id === pt.id;
-                        const isMax     = pt.ufc !== null && pt.ufc === maxUfc;
-                        return (
-                          <tr key={pt.id} className={isEditing ? "pts-row--editing" : ""}>
-                            <td><span className="pts-id">{pt.id}</span></td>
-                            <td>{pt.label}</td>
-                            <td>
-                              <span className="pts-type-dot" style={{ background: typeInfo?.color }} />
-                              T{pt.pointType}
-                            </td>
-                            <td className="pts-num">{isEditing ? draft.x : pt.x}</td>
-                            <td className="pts-num">{isEditing ? draft.y : pt.y}</td>
-                            <td className={`pts-num${isMax ? " pts-ufc-max" : ""}`}>
-                              {pt.ufc !== null ? pt.ufc : <span className="pts-ufc-empty">—</span>}
-                              {isMax && <span className="pts-ufc-badge" title="Valeur la plus élevée de la zone">▲</span>}
-                            </td>
-                            <td className="pts-actions">
+              <table className="pts-table">
+                <thead>
+                  <tr><th>ID</th><th>Libellé</th><th>Type</th><th>X%</th><th>Y%</th><th>UFC/cm²</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {zonePoints.map(pt => {
+                    const typeInfo  = PT_TYPES.find(t => t.value === pt.pointType);
+                    const isEditing = editing?.id === pt.id;
+                    const isMax     = pt.displayUfc !== null && pt.displayUfc === maxUfcInZone;
+                    const isRandom  = isRandomPointId(pt.id);
+                    const isConfirmingDel = confirmDeleteId === pt.id;
+                    return (
+                      <tr key={pt.id} className={isEditing ? "pts-row--editing" : ""}>
+                        <td>
+                          <span className="pts-id">{pt.id}</span>
+                          {isRandom && <span className="pts-random-badge" title="Point aléatoire — créé manuellement, hors plan officiel">Aléatoire</span>}
+                        </td>
+                        <td>{pt.label}</td>
+                        <td>
+                          <span className="pts-type-dot" style={{ background: typeInfo?.color }} />
+                          T{pt.pointType}
+                        </td>
+                        <td className="pts-num">{isEditing ? draft.x : pt.x}</td>
+                        <td className="pts-num">{isEditing ? draft.y : pt.y}</td>
+                        <td className={`pts-num${isMax ? " pts-ufc-max" : ""}`}>
+                          {pt.displayUfc !== null ? pt.displayUfc : <span className="pts-ufc-empty">—</span>}
+                          {isMax && <span className="pts-ufc-badge" title="Valeur la plus élevée de la zone">▲</span>}
+                          {pt.hasLiveData && <span className="pts-ufc-live-badge" title="Valeur issue du bulletin actuellement chargé">bulletin</span>}
+                          {pt.salmoDetected && <span className="pts-salmo-badge" title="Salmonelles détectées dans le bulletin actuellement chargé">⚠ Salmonelles</span>}
+                        </td>
+                        <td className="pts-actions">
+                          {isConfirmingDel ? (
+                            <span className="pts-confirm-del">
+                              <button className="pts-btn-del-ok" onClick={() => confirmDelete(pt.id)}>Supprimer</button>
+                              <button className="pts-btn-cancel" onClick={() => setConfirmDeleteId(null)}>Annuler</button>
+                            </span>
+                          ) : (
+                            <>
                               <button className="pts-btn-edit"
                                 onClick={() => isEditing ? cancel() : openEdit(pt)}
                                 title={isEditing ? "Annuler" : "Modifier"}>
@@ -634,19 +621,25 @@ function PointsTab() {
                                   ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                   : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>}
                               </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                );
-              })()}
+                              {isRandom && (
+                                <button className="pts-btn-del" onClick={() => { setDeleteError(""); setConfirmDeleteId(pt.id); }} title="Supprimer ce point aléatoire">
+                                  <Icon name="trash" size={13} strokeWidth={2.5} />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
 
           <FlashMsg visible={saved} text="Position enregistrée" />
           {error && <p className="pts-error">{error}</p>}
+          {deleteError && <p className="pts-error">{deleteError}</p>}
         </div>
 
         {/* ── Colonne droite : mini-carte + formulaire ── */}
@@ -654,15 +647,17 @@ function PointsTab() {
           <p className="pts-map-hint">
             {editing
               ? `Déplacement de "${editing.label}" — cliquez sur le plan ou saisissez les coordonnées.`
+              : creating
+              ? "Cliquez sur le plan pour placer le nouveau point aléatoire."
               : "Glissez un point directement sur le plan pour le déplacer, ou cliquez sur le crayon pour saisir les coordonnées manuellement."}
           </p>
           <MiniMap
             pointsByZone={pointsByZone}
             highlightZone={selectedZoneId}
-            crosshair={crosshair}
+            crosshair={crosshair ?? createCrosshair}
             editingId={editing?.id ?? null}
-            onPlaceClick={editing ? handleMapClick : null}
-            onPointDragEnd={!editing ? handleDragEnd : null}
+            onPlaceClick={editing ? handleMapClick : creating ? handleCreateMapClick : null}
+            onPointDragEnd={!editing && !creating ? handleDragEnd : null}
           />
 
           {editing && (
@@ -686,6 +681,45 @@ function PointsTab() {
               </div>
             </div>
           )}
+
+          {creating && (
+            <div className="pts-form">
+              <div className="pts-form-title">
+                Nouveau point aléatoire — {ZONES.find(z => z.id === selectedZoneId)?.name}
+              </div>
+              <div className="adm-form-grid">
+                <Field label="Type de point">
+                  <select
+                    className="adm-input"
+                    value={createDraft.type}
+                    onChange={(e) => setCreateDraft(d => ({ ...d, type: e.target.value }))}
+                  >
+                    {PT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="Identifiant (généré automatiquement)">
+                  <Inp value={`${createDraft.type}.${nextSeqForType(createDraft.type)}`} readOnly />
+                </Field>
+                <Field label="Libellé (optionnel)">
+                  <Inp value={createDraft.label} onChange={(v) => setCreateDraft(d => ({ ...d, label: v }))} placeholder="Par défaut : identique à l'identifiant" />
+                </Field>
+                <Field label="Description">
+                  <Inp value={createDraft.description} onChange={(v) => setCreateDraft(d => ({ ...d, description: v }))} placeholder="ex : Poignée de porte chambre froide" />
+                </Field>
+                <Field label="X — horizontal (0–100 %)">
+                  <Inp value={createDraft.x} onChange={(v) => setCreateDraft(d => ({ ...d, x: v }))} type="number" placeholder="Cliquez sur le plan" />
+                </Field>
+                <Field label="Y — vertical (0–100 %)">
+                  <Inp value={createDraft.y} onChange={(v) => setCreateDraft(d => ({ ...d, y: v }))} type="number" placeholder="Cliquez sur le plan" />
+                </Field>
+              </div>
+              {createError && <p className="pts-error">{createError}</p>}
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                <button className="btn-save" onClick={submitCreate}>Créer le point</button>
+                <button className="adm-btn-cancel" onClick={cancelCreate}>Annuler</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -699,8 +733,6 @@ const TABS = [
   { id: "zones",  label: "Zones" },
   { id: "points", label: "Points de prélèvement" },
   { id: "seuils", label: "Seuils" },
-  { id: "site",   label: "Infos site" },
-  { id: "compte", label: "Mon compte" },
 ];
 
 export default function AdminPage() {
@@ -712,8 +744,6 @@ export default function AdminPage() {
       case "zones":  return <ZonesTab />;
       case "points": return <PointsTab />;
       case "seuils": return <SeuilsTab />;
-      case "site":   return <SiteTab />;
-      case "compte": return <CompteTab />;
       default:       return <ZonesTab />;
     }
   };

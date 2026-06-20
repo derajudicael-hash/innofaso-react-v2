@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { pointsAPI } from "../services/api";
-
-const PointsContext = createContext(null);
+import { ZONES } from "../map/factoryData.js";
 
 function toFrontend(p) {
   return {
@@ -16,18 +15,68 @@ function toFrontend(p) {
   };
 }
 
+// Build fallback points from static factoryData.ts
+function buildFallbackPoints() {
+  const pts = [];
+  ZONES.forEach(zone => {
+    zone.points.forEach(p => {
+      pts.push({
+        id: p.id,
+        zone_map_id: zone.id,
+        label: p.label,
+        x: p.x,
+        y: p.y,
+        point_type: p.pointType,
+        description: p.description,
+        ufc: p.ufc ?? null,
+      });
+    });
+  });
+  return pts;
+}
+
+const FALLBACK_POINTS = buildFallbackPoints();
+
+// Distingue une vraie panne réseau (backend hors-ligne, cf. services/api.js
+// `request()`) d'une erreur métier renvoyée par le serveur (ex. ID de point
+// déjà utilisé) — seule la première doit basculer en mode "local" silencieux.
+function isNetworkError(err) {
+  return err?.message === "Délai dépassé — vérifiez que le serveur backend est démarré (port 4000)" ||
+         err?.message === "Serveur inaccessible — lancez npm run dev et vérifiez que le backend tourne";
+}
+
+// Convertit un payload API (snake_case, cf. routes/points.js) en clés
+// frontend (camelCase) pour la mise à jour locale en mode hors-ligne.
+function toFrontendPartial(data) {
+  const out = {};
+  if ("zone_map_id" in data)  out.zoneMapId   = data.zone_map_id;
+  if ("label" in data)        out.label       = data.label;
+  if ("x" in data)            out.x           = Number(data.x);
+  if ("y" in data)            out.y           = Number(data.y);
+  if ("point_type" in data)   out.pointType   = data.point_type;
+  if ("description" in data)  out.description = data.description;
+  if ("ufc" in data)          out.ufc         = data.ufc !== null && data.ufc !== undefined && data.ufc !== "" ? Number(data.ufc) : null;
+  return out;
+}
+
+const PointsContext = createContext(null);
+
 export function PointsProvider({ children }) {
-  const [points,  setPoints]  = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [points,  setPoints]  = useState(FALLBACK_POINTS.map(toFrontend));
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => { load(); }, []);
 
   const load = async () => {
+    setLoading(true);
     try {
       const data = await pointsAPI.getAll();
-      setPoints(data.map(toFrontend));
+      if (data && data.length > 0) {
+        setPoints(data.map(toFrontend));
+      }
     } catch {
-      // Si le backend n'est pas dispo, on utilise les points statiques (fallback dans FactoryMap)
+      // Fallback to static points already set as initial state
+      console.info("📡 Points: Backend indisponible — utilisation des données statiques");
     } finally {
       setLoading(false);
     }
@@ -41,7 +90,7 @@ export function PointsProvider({ children }) {
     return acc;
   }, {});
 
-  // Record<zoneMapId, number|null> — UFC max par zone (null si aucune valeur saisie)
+  // Record<zoneMapId, number|null> — UFC max par zone
   const ufcByZone = Object.fromEntries(
     Object.entries(pointsByZone).map(([zoneId, pts]) => {
       const measured = pts.filter(p => p.ufc !== null).map(p => p.ufc);
@@ -50,17 +99,35 @@ export function PointsProvider({ children }) {
   );
 
   const addPoint = async (data) => {
-    const created = await pointsAPI.create(data);
-    setPoints(prev => [...prev, toFrontend(created)]);
+    try {
+      const created = await pointsAPI.create(data);
+      setPoints(prev => [...prev, toFrontend(created)]);
+      return toFrontend(created);
+    } catch (err) {
+      if (!isNetworkError(err)) throw err;
+      // Backend hors-ligne : on ajoute localement pour ne pas bloquer l'utilisateur
+      const local = { id: data.id, ...toFrontendPartial(data) };
+      setPoints(prev => [...prev, local]);
+      return local;
+    }
   };
 
   const updatePoint = async (id, data) => {
-    const updated = await pointsAPI.update(id, data);
-    setPoints(prev => prev.map(p => p.id === id ? toFrontend(updated) : p));
+    try {
+      const updated = await pointsAPI.update(id, data);
+      setPoints(prev => prev.map(p => p.id === id ? toFrontend(updated) : p));
+    } catch (err) {
+      if (!isNetworkError(err)) throw err;
+      setPoints(prev => prev.map(p => p.id === id ? { ...p, ...toFrontendPartial(data) } : p));
+    }
   };
 
   const deletePoint = async (id) => {
-    await pointsAPI.remove(id);
+    try {
+      await pointsAPI.remove(id);
+    } catch (err) {
+      if (!isNetworkError(err)) throw err;
+    }
     setPoints(prev => prev.filter(p => p.id !== id));
   };
 

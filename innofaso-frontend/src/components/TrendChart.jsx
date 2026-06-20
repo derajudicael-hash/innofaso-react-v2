@@ -1,58 +1,54 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 
-// ─────────────────────────────────────────────
-// BUILD DATASET FROM TAB SELECTION
-// ─────────────────────────────────────────────
-function buildDataset(history, tab) {
-  const count = history.length;
-  const now   = new Date();
-
-  // Génère une label de date à partir d'aujourd'hui - daysAgo jours
-  const dateLabel = (daysAgo) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - daysAgo);
-    return `${d.getDate()}/${String(d.getMonth() + 1).padStart(2, "0")}`;
-  };
-
-  if (tab === "7j") {
-    const labels = Array.from({ length: count }, (_, i) =>
-      dateLabel(count - 1 - i)
-    );
-    return { labels, data: history };
-  }
-
-  // 30j / 90j : on espace les points réels sur la plage demandée
-  // Pas de données inventées — on affiche ce qu'on a réellement
-  const span = tab === "30j" ? 30 : 90;
-  const step = count > 1 ? Math.floor(span / (count - 1)) : span;
-
-  const labels = Array.from({ length: count }, (_, i) =>
-    dateLabel(span - i * step)
-  );
-
-  return { labels, data: history };
+function fmtDateShort(d) {
+  return `${d.getDate()}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function fmtDateFull(d) {
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
 // ─────────────────────────────────────────────
-// DRAW FUNCTION (pure canvas)
+// DRAW FUNCTION (pure canvas) — une courbe par point (couleur = identité du
+// point), axe X proportionnel aux dates réelles, ligne de seuil pointillée,
+// et repère d'alerte sur les dates où une salmonelle a été détectée.
+// Renvoie la liste des points dessinés (position pixel + données) pour
+// permettre le survol/info-bulle sans recalcul côté React.
 // ─────────────────────────────────────────────
-function drawChart(canvas, history, tab, seuil = 50) {
+export function drawChart(canvas, series, seuil) {
   const wrap = canvas.parentElement;
   canvas.width  = wrap.clientWidth;
   canvas.height = wrap.clientHeight;
-
   const ctx = canvas.getContext("2d");
-  const { labels, data } = buildDataset(history, tab);
+  const cw = canvas.width, ch = canvas.height;
 
-  const maxVal = Math.max(...data, 65);
-  const minVal = Math.min(...data, 0);
-  const pad    = { top: 18, right: 16, bottom: 28, left: 40 };
-  const W      = canvas.width  - pad.left - pad.right;
-  const H      = canvas.height - pad.top  - pad.bottom;
+  const pad = { top: 18, right: 16, bottom: 28, left: 40 };
+  const W = cw - pad.left - pad.right;
+  const H = ch - pad.top - pad.bottom;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, cw, ch);
 
-  // Grid lines + Y axis labels
+  const allPoints = (series || []).flatMap(s => s.points || []);
+  if (allPoints.length === 0) {
+    ctx.fillStyle = "#9ca3af";
+    ctx.font = "12px 'DM Sans', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Aucune donnée pour cette sélection", cw / 2, ch / 2);
+    return [];
+  }
+
+  const allUfc = allPoints.map(p => p.ufc).filter(v => v !== null && v !== undefined);
+  const maxVal = Math.max(...allUfc, seuil ?? 0, 10);
+  const minVal = Math.min(...allUfc, 0);
+
+  const times = allPoints.map(p => new Date(p.date).getTime());
+  const xMin = Math.min(...times);
+  const xMax = Math.max(...times);
+  const singleDate = xMax === xMin;
+
+  const xPix = (t) => singleDate ? pad.left + W / 2 : pad.left + ((t - xMin) / (xMax - xMin)) * W;
+  const yPix = (v) => maxVal > minVal ? pad.top + H * (1 - (v - minVal) / (maxVal - minVal)) : pad.top + H / 2;
+
+  // Grid + Y axis labels
   [0, 0.25, 0.5, 0.75, 1].forEach((t) => {
     const y = pad.top + H * (1 - t);
     ctx.strokeStyle = "#e4e7ec";
@@ -61,15 +57,28 @@ function drawChart(canvas, history, tab, seuil = 50) {
     ctx.moveTo(pad.left, y);
     ctx.lineTo(pad.left + W, y);
     ctx.stroke();
-    ctx.fillStyle  = "#9ca3af";
-    ctx.font       = "10px 'DM Mono', monospace";
-    ctx.textAlign  = "right";
+    ctx.fillStyle = "#9ca3af";
+    ctx.font      = "10px 'DM Mono', monospace";
+    ctx.textAlign = "right";
     ctx.fillText(Math.round(minVal + (maxVal - minVal) * t), pad.left - 6, y + 4);
   });
 
+  // X axis labels
+  ctx.fillStyle = "#9ca3af";
+  ctx.font      = "10px 'DM Mono', monospace";
+  ctx.textAlign = "center";
+  if (singleDate) {
+    ctx.fillText(fmtDateShort(new Date(xMin)), pad.left + W / 2, pad.top + H + 18);
+  } else {
+    for (let i = 0; i <= 4; i++) {
+      const t = xMin + (i / 4) * (xMax - xMin);
+      ctx.fillText(fmtDateShort(new Date(t)), xPix(t), pad.top + H + 18);
+    }
+  }
+
   // Threshold line (seuil dynamique de la zone)
-  if (seuil >= minVal && seuil <= maxVal) {
-    const ty = pad.top + H * (1 - (seuil - minVal) / (maxVal - minVal));
+  if (seuil != null && seuil >= minVal && seuil <= maxVal) {
+    const ty = yPix(seuil);
     ctx.setLineDash([4, 4]);
     ctx.strokeStyle = "#bf3b2e";
     ctx.lineWidth   = 1.5;
@@ -84,79 +93,132 @@ function drawChart(canvas, history, tab, seuil = 50) {
     ctx.fillText(`Seuil ${seuil}`, pad.left + 4, ty - 5);
   }
 
-  // Data points — quand un seul point, le placer au centre
-  const pts = data.map((v, i) => ({
-    x: data.length > 1 ? pad.left + (i / (data.length - 1)) * W : pad.left + W / 2,
-    y: maxVal > minVal
-      ? pad.top + H * (1 - (v - minVal) / (maxVal - minVal))
-      : pad.top + H / 2,
-  }));
+  const hitPoints = [];
 
-  // Gradient area fill
-  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + H);
-  grad.addColorStop(0, "rgba(26,111,163,0.13)");
-  grad.addColorStop(1, "rgba(26,111,163,0)");
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pad.top + H);
-  pts.forEach((p) => ctx.lineTo(p.x, p.y));
-  ctx.lineTo(pts[pts.length - 1].x, pad.top + H);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
+  (series || []).forEach((s) => {
+    const valid = (s.points || []).filter(p => p.ufc !== null && p.ufc !== undefined);
+    if (valid.length === 0) return;
+    const pix = valid.map(p => ({ x: xPix(new Date(p.date).getTime()), y: yPix(p.ufc), src: p }));
 
-  // Line
-  ctx.beginPath();
-  pts.forEach((p, i) =>
-    i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)
-  );
-  ctx.strokeStyle = "#1a6fa3";
-  ctx.lineWidth   = 2;
-  ctx.lineJoin    = "round";
-  ctx.stroke();
+    if (pix.length > 1) {
+      ctx.beginPath();
+      pix.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth   = 2;
+      ctx.lineJoin    = "round";
+      ctx.stroke();
+    }
 
-  // Dots + X axis labels (sampled every ~8 points)
-  const step = Math.ceil(data.length / 8);
-  pts.forEach((p, i) => {
-    if (i % step !== 0 && i !== data.length - 1) return;
+    pix.forEach((p) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = s.color;
+      ctx.fill();
+      ctx.lineWidth   = 1.5;
+      ctx.strokeStyle = "#fff";
+      ctx.stroke();
 
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = data[i] >= (seuil ?? 50) ? "#bf3b2e" : "#1a6fa3";
-    ctx.fill();
+      // Repère salmonelle : icône d'alerte au-dessus du point sur la courbe EB
+      if (p.src.salmonella === true) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y - 12, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#bf3b2e";
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = "#fff";
+        ctx.font      = "bold 9px 'DM Sans', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("!", p.x, p.y - 9);
+      }
 
-    ctx.fillStyle = "#9ca3af";
-    ctx.font      = "10px 'DM Mono', monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(labels[i], p.x, pad.top + H + 18);
+      hitPoints.push({
+        x: p.x, y: p.y,
+        pointId: s.pointId, label: s.label, color: s.color,
+        ufc: p.src.ufc, date: p.src.date, salmonella: p.src.salmonella,
+      });
+    });
   });
+
+  return hitPoints;
 }
 
 // ─────────────────────────────────────────────
-// TREND CHART COMPONENT
+// TREND CHART COMPONENT — series: [{ pointId, label, color, points: [{date, ufc, salmonella}] }]
 // ─────────────────────────────────────────────
-export default function TrendChart({ history, tab, seuil }) {
-  const canvasRef = useRef(null);
+export default function TrendChart({ series, seuil }) {
+  const canvasRef    = useRef(null);
+  const wrapRef       = useRef(null);
+  const hitPointsRef  = useRef([]);
+  const [hover, setHover] = useState(null);
 
   const redraw = useCallback(() => {
-    if (canvasRef.current) drawChart(canvasRef.current, history, tab, seuil);
-  }, [history, tab, seuil]);
+    if (canvasRef.current) {
+      hitPointsRef.current = drawChart(canvasRef.current, series, seuil);
+    }
+  }, [series, seuil]);
 
-  // Redraw when data/tab changes
-  useEffect(() => {
-    redraw();
-  }, [redraw]);
+  useEffect(() => { redraw(); }, [redraw]);
 
-  // Redraw on resize
   useEffect(() => {
     const ro = new ResizeObserver(redraw);
     if (canvasRef.current) ro.observe(canvasRef.current.parentElement);
     return () => ro.disconnect();
   }, [redraw]);
 
+  const handleMouseMove = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    let best = null, bestDist = 169; // rayon de capture ~13px
+    for (const hp of hitPointsRef.current) {
+      const d = (hp.x - mx) ** 2 + (hp.y - my) ** 2;
+      if (d < bestDist) { bestDist = d; best = hp; }
+    }
+    setHover(best);
+  };
+
+  const wrapWidth = wrapRef.current?.clientWidth || 320;
+
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: "100%", height: "100%", display: "block" }}
-    />
+    <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%" }}>
+      <canvas
+        ref={canvasRef}
+        style={{ width: "100%", height: "100%", display: "block", cursor: hover ? "pointer" : "default" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHover(null)}
+      />
+      {hover && (
+        <div
+          style={{
+            position: "absolute",
+            left: Math.min(Math.max(hover.x, 72), wrapWidth - 72),
+            top: Math.max(hover.y - 14, 0),
+            transform: "translate(-50%, -100%)",
+            background: "rgba(0,0,0,0.82)",
+            color: "#fff",
+            borderRadius: 3,
+            padding: "6px 9px",
+            fontSize: 11,
+            fontFamily: "'DM Sans', sans-serif",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+            zIndex: 50,
+            boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+          }}
+        >
+          <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: hover.color, display: "inline-block", flexShrink: 0 }} />
+            {hover.label || hover.pointId}
+          </div>
+          <div style={{ color: "#60a5fa", marginTop: 2 }}>{fmtDateFull(new Date(hover.date))}</div>
+          <div style={{ color: "#fbbf24" }}>{hover.ufc} UFC/cm²</div>
+          {hover.salmonella === true && (
+            <div style={{ color: "#ff8a7a", fontWeight: 700, marginTop: 2 }}>⚠ Salmonelles détectées</div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

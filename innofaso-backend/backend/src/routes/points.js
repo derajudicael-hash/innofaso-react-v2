@@ -1,7 +1,6 @@
 const express = require("express");
 const db      = require("../db");
 const auth             = require("../middleware/auth");
-const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -18,8 +17,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /api/points — créer un point (admin)
-router.post("/", auth, requireAdmin, async (req, res) => {
+// POST /api/points — créer un point (tout compte connecté : superadmin ou éditeur)
+router.post("/", auth, async (req, res) => {
   const { id, zone_map_id, label, x, y, point_type, description, ufc } = req.body;
   if (!id || !zone_map_id || !label || x === undefined || y === undefined) {
     return res.status(400).json({ error: "id, zone_map_id, label, x, y sont requis." });
@@ -40,8 +39,8 @@ router.post("/", auth, requireAdmin, async (req, res) => {
   }
 });
 
-// PUT /api/points/:id — modifier un point (admin)
-router.put("/:id", auth, requireAdmin, async (req, res) => {
+// PUT /api/points/:id — modifier un point (tout compte connecté : superadmin ou éditeur)
+router.put("/:id", auth, async (req, res) => {
   const { zone_map_id, label, x, y, point_type, description, ufc } = req.body;
   const ufcVal = (ufc !== undefined && ufc !== null && ufc !== "") ? Number(ufc) : null;
   try {
@@ -78,8 +77,8 @@ router.put("/:id", auth, requireAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/points/:id — supprimer un point (admin)
-router.delete("/:id", auth, requireAdmin, async (req, res) => {
+// DELETE /api/points/:id — supprimer un point (tout compte connecté : superadmin ou éditeur)
+router.delete("/:id", auth, async (req, res) => {
   try {
     await db.query("DELETE FROM sampling_points WHERE id=?", [req.params.id]);
     res.json({ message: "Point supprimé." });

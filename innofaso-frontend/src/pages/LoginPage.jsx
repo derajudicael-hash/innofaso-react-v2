@@ -24,7 +24,7 @@ export default function LoginPage({ onBack }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    await login(username, password);
+    await login(username.trim(), password);
     setLoading(false);
   };
 
@@ -34,8 +34,11 @@ export default function LoginPage({ onBack }) {
 
         {/* Brand */}
         <div className="login-brand-block">
-          <div className="login-logo-icon">I</div>
-          <div className="login-brand-name">InnoFaso</div>
+          <img
+            src="/innofaso-logo.png"
+            alt="InnoFaso"
+            className="login-logo-image"
+          />
           <div className="login-brand-sub">Espace Administration</div>
         </div>
 
@@ -65,7 +68,7 @@ export default function LoginPage({ onBack }) {
                 placeholder="Votre identifiant"
                 value={username}
                 autoComplete="username"
-                onChange={(e) => { setUsername(e.target.value); setLoginError(""); }}
+                onChange={(e) => { setUsername(e.target.value.trimStart()); setLoginError(""); }}
                 required
               />
             </div>

@@ -1,12 +1,12 @@
 import { useState, useMemo } from "react";
 import { usePoints }         from "../context/PointsContext";
 import { useComputedZones }  from "../hooks/useComputedZones";
-import { usePersistedFiles } from "../map/usePersistedFiles";
+import { usePersistedFiles } from "../map/usePersistedFiles.js";
 import KpiCard       from "../components/KpiCard";
 import ChartSection  from "../components/ChartSection";
 import KpiModal      from "../components/KpiModal";
-import FactoryMap    from "../map/FactoryMap";
-import Sidebar       from "../map/Sidebar";
+import FactoryMap    from "../map/FactoryMap.jsx";
+import MapSidebar    from "../map/MapSidebar.jsx";
 
 export const KPI_DETAILS = {
   critical: {
@@ -56,13 +56,13 @@ export const KPI_DETAILS = {
 };
 
 export default function DashboardPage() {
-  const { computedZones, thresholds, loading, error } = useComputedZones();
   const { pointsByZone } = usePoints();
   const { activeResults } = usePersistedFiles();
+  const { computedZones, thresholds, loading, error } = useComputedZones(activeResults);
 
   const [selectedMapZone, setSelectedMapZone] = useState(null);
   const [selectedPoint,   setSelectedPoint]   = useState(null);
-  const [tab,       setTab]       = useState("7j");
+  const [tab, setTab] = useState("7j");
   const [openModal, setOpenModal] = useState(null);
 
   const critThresh = thresholds?.critical ?? 50;
@@ -154,7 +154,7 @@ export default function DashboardPage() {
 
         {/* Carte + panneau droit */}
         <div className="dash-main">
-          {/* Carte interactive (zip FactoryMap — toutes fonctionnalités) */}
+          {/* Carte interactive */}
           <div className="dash-map">
             <div className="panel map-panel" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
               <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -189,11 +189,12 @@ export default function DashboardPage() {
           <div className="dash-side">
             {selectedMapZone ? (
               <>
-                {/* Sidebar du zip avec données backend + bulletin */}
+                {/* Sidebar avec données backend + bulletin */}
                 <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex' }}>
-                  <Sidebar
+                  <MapSidebar
                     zone={selectedMapZone}
                     point={selectedPoint}
+                    points={pointsByZone[selectedMapZone?.id] ?? selectedMapZone?.points ?? []}
                     results={activeResults}
                     backendZone={activeBackendZone}
                     onClose={() => { setSelectedMapZone(null); setSelectedPoint(null); }}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useComputedZones } from "../hooks/useComputedZones";
+import { usePersistedFiles } from "../map/usePersistedFiles.js";
 import Icon from "./Icon";
 
 const STATUS_LABEL = { critical: "Critique", warning: "Surveillance" };
@@ -14,7 +15,8 @@ function SummaryPill({ cls, count, label }) {
 }
 
 export default function AlertsPage() {
-  const { computedZones: zones, loading, error } = useComputedZones();
+  const { activeResults } = usePersistedFiles();
+  const { computedZones: zones, loading, error } = useComputedZones(activeResults);
   const [filter, setFilter] = useState("all");
 
   if (loading) return (

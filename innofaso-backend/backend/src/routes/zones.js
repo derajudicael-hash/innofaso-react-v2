@@ -1,7 +1,6 @@
 const express = require("express");
 const db      = require("../db");
-const auth            = require("../middleware/auth");
-const { requireAdmin } = require("../middleware/auth");
+const auth    = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -77,9 +76,9 @@ router.get("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// POST /api/zones  — créer une zone (admin)
+// POST /api/zones  — créer une zone (tout compte connecté : superadmin ou éditeur)
 // ─────────────────────────────────────────────
-router.post("/", auth, requireAdmin, async (req, res) => {
+router.post("/", auth, async (req, res) => {
   const { label, ufc, seuil, responsible, lastCheck, nextCheck, mapId } = req.body;
   if (!label || ufc === undefined) {
     return res.status(400).json({ error: "label et ufc sont requis." });
@@ -128,9 +127,9 @@ router.post("/", auth, requireAdmin, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// PUT /api/zones/:id  — modifier une zone (admin)
+// PUT /api/zones/:id  — modifier une zone (tout compte connecté : superadmin ou éditeur)
 // ─────────────────────────────────────────────
-router.put("/:id", auth, requireAdmin, async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   const { id } = req.params;
   const { label, ufc, seuil, responsible, lastCheck, nextCheck } = req.body;
 
@@ -139,7 +138,7 @@ router.put("/:id", auth, requireAdmin, async (req, res) => {
     const status    = computeStatus(numUfc, seuil ?? 50);
     const alertInfo = ALERT_MAP[status];
 
-    await db.query(
+    const [updateResult] = await db.query(
       `UPDATE zones SET
         label = ?, status = ?, ufc = ?, seuil = ?,
         responsible = ?, last_check = ?, next_check = ?,
@@ -152,6 +151,9 @@ router.put("/:id", auth, requireAdmin, async (req, res) => {
         id,
       ]
     );
+    if (updateResult.affectedRows === 0) {
+      return res.status(404).json({ error: "Zone introuvable." });
+    }
 
     // Record history point + purge > 90 jours
     await db.query("INSERT INTO zone_history (zone_id, ufc) VALUES (?, ?)", [id, numUfc]);
@@ -184,9 +186,9 @@ router.put("/:id", auth, requireAdmin, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// DELETE /api/zones/:id  — supprimer une zone (admin)
+// DELETE /api/zones/:id  — supprimer une zone (tout compte connecté : superadmin ou éditeur)
 // ─────────────────────────────────────────────
-router.delete("/:id", auth, requireAdmin, async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   try {
     await db.query("DELETE FROM zones WHERE id = ?", [req.params.id]);
     res.json({ message: "Zone supprimée." });

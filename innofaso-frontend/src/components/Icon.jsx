@@ -84,6 +84,12 @@ const ICON_PATHS = {
   "arrow-up":   <polyline points="18,15 12,9 6,15" />,
   "arrow-down": <polyline points="6,9 12,15 18,9" />,
   minus:        <line x1="5" y1="12" x2="19" y2="12" />,
+  plus: (
+    <>
+      <line x1="12" y1="5"  x2="12" y2="19" />
+      <line x1="5"  y1="12" x2="19" y2="12" />
+    </>
+  ),
   filter: (
     <>
       <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46" />

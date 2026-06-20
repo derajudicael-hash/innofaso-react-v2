@@ -1,9 +1,11 @@
-import { useState, useMemo, useEffect } from "react";
-import { useComputedZones } from "../hooks/useComputedZones";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useComputedZones, TYPE_SEUIL } from "../hooks/useComputedZones";
+import { usePointHistory, buildSeriesFromRaw } from "../hooks/usePointHistory";
+import { useAuth } from "../context/AuthContext";
+import { labResultsAPI } from "../services/api.js";
+import { exportHistoryToDocx } from "../utils/exportHistoryDocx.js";
 import TrendChart from "../components/TrendChart";
 import Icon from "../components/Icon";
-
-const TABS = ["7j", "30j", "90j"];
 
 function statusOf(ufc, seuil) {
   if (ufc >= seuil)        return "critical";
@@ -13,11 +15,9 @@ function statusOf(ufc, seuil) {
 
 const STATUS_LABEL = { critical: "Critique", warning: "Surveillance", ok: "Conforme" };
 
-// Génère un label "JJ/MM" pour une date passée de N jours
-function dateLabel(daysAgo) {
-  const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+function fmtDateFull(d) {
+  const dd = new Date(d);
+  return `${String(dd.getDate()).padStart(2, "0")}/${String(dd.getMonth() + 1).padStart(2, "0")}/${dd.getFullYear()}`;
 }
 
 function StatBox({ label, value, unit, colorClass }) {
@@ -34,49 +34,124 @@ function StatBox({ label, value, unit, colorClass }) {
 
 export default function HistoryPage() {
   const { computedZones: zones, loading } = useComputedZones();
-  const [selectedId, setSelectedId] = useState(null);
-  const [tab, setTab] = useState("7j");
+  const { user } = useAuth();
+  const isSuperadmin = user?.role === "superadmin";
 
+  const [selectedId, setSelectedId] = useState(null);
   useEffect(() => {
     if (zones.length && !selectedId) setSelectedId(zones[0].id);
   }, [zones, selectedId]);
+  const zone = useMemo(() => zones.find((z) => z.id === selectedId) || zones[0] || null, [zones, selectedId]);
 
-  const zone    = useMemo(() => zones.find((z) => z.id === selectedId) || zones[0] || null, [zones, selectedId]);
-  const history = zone?.history || [];
-  // Seuil le plus restrictif de la zone (min des seuils de types présents)
-  const seuil   = zone?.worstSeuil ?? zone?.seuil ?? 50;
+  // Courbes par point (Phase 1) + points aléatoires distincts (Phase 2), réelles depuis le backend
+  const { series, randomPoints, loading: histLoading, reload: reloadHistory } = usePointHistory(zone?.mapId);
 
-  // Dates réelles pour chaque relevé (aujourd'hui - N jours)
-  const dateLabels = useMemo(() =>
-    history.map((_, i) => dateLabel(history.length - 1 - i)),
-    [history]
-  );
+  // Checkboxes de visibilité par point — toutes cochées par défaut, réinitialisées au changement de zone
+  const [hiddenIds, setHiddenIds] = useState(() => new Set());
+  useEffect(() => { setHiddenIds(new Set()); }, [zone?.mapId]);
+  const togglePoint = (pointId) => setHiddenIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(pointId)) next.delete(pointId); else next.add(pointId);
+    return next;
+  });
+  const visibleSeries = useMemo(() => series.filter((s) => !hiddenIds.has(s.pointId)), [series, hiddenIds]);
+
+  const seuil = zone?.worstSeuil ?? zone?.seuil ?? 50;
+
+  // Tous les relevés réels de la zone (tous points confondus), triés chronologiquement
+  const allPointsFlat = useMemo(() => {
+    return series
+      .flatMap((s) => (s.points || []).map((p) => ({
+        ...p, pointId: s.pointId, label: s.label,
+        seuil: TYPE_SEUIL[s.pointType] ?? seuil,
+      })))
+      .filter((p) => p.ufc !== null && p.ufc !== undefined)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [series, seuil]);
 
   const stats = useMemo(() => {
-    if (!history.length) return null;
-    const avg   = Math.round(history.reduce((s, v) => s + v, 0) / history.length);
-    const max   = Math.max(...history);
-    const min   = Math.min(...history);
-    const trend = history.length >= 2 ? history[history.length - 1] - history[0] : 0;
+    if (!allPointsFlat.length) return null;
+    const values = allPointsFlat.map((p) => p.ufc);
+    const avg    = Math.round(values.reduce((s, v) => s + v, 0) / values.length);
+    const max    = Math.max(...values);
+    const min    = Math.min(...values);
+    const trend  = values.length >= 2 ? values[values.length - 1] - values[0] : 0;
     return { avg, max, min, trend };
-  }, [history]);
+  }, [allPointsFlat]);
 
+  // ── Journal des imports (annulation superadmin) ─────────────
+  const [imports, setImports] = useState([]);
+  const [importsLoading, setImportsLoading] = useState(false);
+
+  const loadImports = useCallback(async () => {
+    setImportsLoading(true);
+    try {
+      setImports(await labResultsAPI.listImports());
+    } catch (err) {
+      console.error("Erreur chargement journal des imports:", err);
+    } finally {
+      setImportsLoading(false);
+    }
+  }, []);
+  useEffect(() => { loadImports(); }, [loadImports]);
+
+  const handleUndo = async (importId) => {
+    if (!window.confirm(
+      "Annuler cet import ? Les valeurs seront restaurées à leur état précédent, sauf pour les points qu'un import plus récent a déjà légitimement modifiés."
+    )) return;
+    try {
+      await labResultsAPI.undoImport(importId);
+      await Promise.all([loadImports(), reloadHistory()]);
+    } catch (err) {
+      alert(err.message || "Erreur lors de l'annulation de l'import.");
+    }
+  };
+
+  // ── Bandeau de rétention 30 jours (Phase 3) ─────────────────
+  const [retention, setRetention] = useState(null);
+  useEffect(() => {
+    labResultsAPI.getRetentionStatus().then(setRetention).catch(() => setRetention(null));
+  }, [series, imports]);
+
+  // ── Exports ──────────────────────────────────────────────────
   const handleExportCSV = () => {
-    if (!zone || !history.length) return;
-    const headers = ["Date", "UFC/cm²", "Seuil", "Statut", "Marge"];
-    const rows = history.map((ufc, i) => {
-      const st    = statusOf(ufc, seuil);
-      const marge = seuil - ufc;
-      return [dateLabels[i], ufc, seuil, STATUS_LABEL[st], (marge > 0 ? "+" : "") + marge];
+    if (!zone || !allPointsFlat.length) return;
+    const headers = ["Date", "Point", "UFC/cm²", "Seuil", "Statut", "Marge", "Salmonelles"];
+    const rows = allPointsFlat.map((h) => {
+      const st    = statusOf(h.ufc, h.seuil);
+      const marge = h.seuil - h.ufc;
+      return [
+        fmtDateFull(h.date), h.pointId, h.ufc, h.seuil, STATUS_LABEL[st], (marge > 0 ? "+" : "") + marge,
+        h.salmonella === true ? "Détectées" : h.salmonella === false ? "Absentes" : "—",
+      ];
     });
-    const csv  = [headers, ...rows].map(r => r.join(",")).join("\n");
+    const csv  = [headers, ...rows].map((r) => r.join(",")).join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     a.href     = url;
-    a.download = `innofaso_${zone.label.replace(/\s+/g, "_")}_${dateLabel(0).replace("/", "-")}.csv`;
+    a.download = `innofaso_${zone.label.replace(/\s+/g, "_")}_historique.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const [exporting, setExporting] = useState(false);
+  const handleExportWord = async () => {
+    setExporting(true);
+    try {
+      const zonesData = [];
+      for (const z of zones) {
+        const raw = await labResultsAPI.getPointHistory(z.mapId);
+        const { series: s, randomPoints: rp } = buildSeriesFromRaw(raw);
+        zonesData.push({ zone: { label: z.label }, series: s, randomPoints: rp, seuil: z.worstSeuil ?? z.seuil ?? 50 });
+      }
+      await exportHistoryToDocx(zonesData);
+    } catch (err) {
+      console.error("Erreur export Word:", err);
+      alert("Erreur lors de la génération du rapport Word.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) return (
@@ -91,15 +166,36 @@ export default function HistoryPage() {
       <div className="history-page-header">
         <div>
           <div className="page-title">Historique des contrôles</div>
-          <div className="page-sub">Évolution des niveaux UFC/cm² par zone · {history.length} derniers relevés</div>
+          <div className="page-sub">
+            Courbe réelle par point de prélèvement (entérobactéries), fenêtre glissante de 30 jours
+          </div>
         </div>
-        <button className="history-export-btn" onClick={handleExportCSV} disabled={!zone || !history.length}>
-          <Icon name="download" size={14} strokeWidth={2} />
-          Exporter CSV
-        </button>
+        <div className="history-export-group">
+          <button className="history-export-btn" onClick={handleExportCSV} disabled={!zone || !allPointsFlat.length}>
+            <Icon name="download" size={14} strokeWidth={2} />
+            CSV (zone)
+          </button>
+          <button className="history-export-btn" onClick={handleExportWord} disabled={exporting}>
+            <Icon name="download" size={14} strokeWidth={2} />
+            {exporting ? "Export en cours…" : "Export Word (toutes zones)"}
+          </button>
+        </div>
       </div>
 
-      {/* Sélecteur + Onglets */}
+      {retention && retention.daysUntilDrop !== null && retention.needsExportSoon && (
+        <div className={`history-retention-banner${retention.daysUntilDrop <= 2 ? " urgent" : ""}`}>
+          <span>
+            ⏳ {retention.daysUntilDrop <= 0
+              ? "Des relevés sortent dès maintenant de la fenêtre de 30 jours."
+              : `Les relevés les plus anciens seront retirés de l'historique dans ${retention.daysUntilDrop} jour${retention.daysUntilDrop > 1 ? "s" : ""}.`}
+            {" "}Exportez le rapport avant cette échéance.
+          </span>
+          <button className="history-export-btn" onClick={handleExportWord} disabled={exporting}>
+            {exporting ? "Export en cours…" : "Exporter maintenant"}
+          </button>
+        </div>
+      )}
+
       <div className="history-controls">
         <select
           className="history-zone-select"
@@ -111,21 +207,24 @@ export default function HistoryPage() {
             <option key={z.id} value={z.id}>{z.label}</option>
           ))}
         </select>
-
-        <div className="tab-group">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              className={`tab-btn${tab === t ? " active" : ""}`}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {zone ? (
+      {!zone ? (
+        <div className="dash-loading">Aucune zone disponible.</div>
+      ) : histLoading ? (
+        <div className="dash-loading"><div className="spinner" />Chargement…</div>
+      ) : series.length === 0 && randomPoints.length === 0 ? (
+        <div className="panel" style={{ padding: "44px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", marginBottom: 8 }}>
+            Aucun relevé pour « {zone.label} » sur les 30 derniers jours
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--txt3)", lineHeight: 1.7, maxWidth: 460, margin: "0 auto" }}>
+            L'historique affiche uniquement les vraies données issues des bulletins d'analyse
+            importés depuis la Cartographie. Importez un bulletin couvrant un ou plusieurs points
+            de cette zone pour voir apparaître son évolution ici.
+          </div>
+        </div>
+      ) : (
         <>
           {/* Stats */}
           <div className="history-stats">
@@ -141,12 +240,7 @@ export default function HistoryPage() {
               unit="UFC/cm²"
               colorClass={stats?.max >= seuil ? "red" : ""}
             />
-            <StatBox
-              label="Minimum"
-              value={stats?.min ?? "—"}
-              unit="UFC/cm²"
-              colorClass=""
-            />
+            <StatBox label="Minimum" value={stats?.min ?? "—"} unit="UFC/cm²" colorClass="" />
             <StatBox
               label="Tendance"
               value={stats
@@ -157,18 +251,55 @@ export default function HistoryPage() {
             />
           </div>
 
-          {/* Graphique */}
+          {/* Graphique multi-points */}
           <div className="panel history-chart-panel">
-            <div className="panel-header">{zone.label} — Évolution UFC/cm²</div>
+            <div className="panel-header">{zone.label} — Évolution UFC/cm² par point</div>
+            {series.length > 0 && (
+              <div className="history-legend">
+                {series.map((s) => (
+                  <label key={s.pointId} className="history-legend-item">
+                    <input
+                      type="checkbox"
+                      checked={!hiddenIds.has(s.pointId)}
+                      onChange={() => togglePoint(s.pointId)}
+                    />
+                    <span className="history-legend-swatch" style={{ background: s.color }} />
+                    {s.pointId}
+                  </label>
+                ))}
+              </div>
+            )}
             <div className="history-chart-wrap">
-              <TrendChart history={history} tab={tab} seuil={seuil} />
+              <TrendChart series={visibleSeries} seuil={seuil} />
             </div>
           </div>
 
-          {/* Tableau */}
+          {/* Points aléatoires — affichage distinct, jamais de courbe */}
+          {randomPoints.length > 0 && (
+            <div className="panel history-random-panel">
+              <div className="history-random-panel-title">
+                Points aléatoires mesurés sur cette période ({randomPoints.length})
+              </div>
+              <div className="history-random-chips">
+                {randomPoints.map((rp) => {
+                  const last     = rp.series[rp.series.length - 1];
+                  const hasSalmo = rp.series.some((s) => s.salmonella === true);
+                  return (
+                    <span key={rp.pointId} className={`history-random-chip${hasSalmo ? " has-salmonella" : ""}`}>
+                      <span className="hrc-id">{rp.pointId}</span>
+                      {last ? `${last.ufc} UFC/cm² · ${fmtDateFull(last.date)}` : "—"}
+                      {hasSalmo && " · ⚠ Salmonelles"}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Tableau détaillé */}
           <div className="panel">
             <div className="panel-header">
-              Relevés disponibles ({history.length})
+              Relevés ({allPointsFlat.length})
               <span className="panel-header-sub">Seuil : {seuil} UFC/cm²</span>
             </div>
             <div className="history-table-wrap">
@@ -176,6 +307,7 @@ export default function HistoryPage() {
                 <thead>
                   <tr>
                     <th>Date</th>
+                    <th>Point</th>
                     <th>UFC/cm²</th>
                     <th>Seuil</th>
                     <th>Statut</th>
@@ -183,18 +315,19 @@ export default function HistoryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.map((ufc, i) => {
-                    const st    = statusOf(ufc, seuil);
-                    const marge = seuil - ufc;
+                  {allPointsFlat.slice().reverse().map((h, i) => {
+                    const st    = statusOf(h.ufc, h.seuil);
+                    const marge = h.seuil - h.ufc;
                     return (
-                      <tr key={i} className={i % 2 === 0 ? "row-even" : ""}>
-                        <td className="td-date">{dateLabels[i]}</td>
+                      <tr key={`${h.pointId}-${h.date}-${i}`} className={i % 2 === 0 ? "row-even" : ""}>
+                        <td className="td-date">{fmtDateFull(h.date)}</td>
+                        <td className="mono txt3">{h.pointId}</td>
                         <td className={`mono ${st === "critical" ? "red" : st === "warning" ? "orange" : ""}`}>
-                          {ufc}
+                          {h.ufc}
                         </td>
-                        <td className="mono txt3">{seuil}</td>
+                        <td className="mono txt3">{h.seuil}</td>
                         <td><span className={`status-badge ${st}`}>{STATUS_LABEL[st]}</span></td>
-                        <td className={`mono ${marge < 0 ? "red" : marge < seuil * 0.2 ? "orange" : "green"}`}>
+                        <td className={`mono ${marge < 0 ? "red" : marge < h.seuil * 0.2 ? "orange" : "green"}`}>
                           {marge > 0 ? "+" : ""}{marge}
                         </td>
                       </tr>
@@ -205,9 +338,62 @@ export default function HistoryPage() {
             </div>
           </div>
         </>
-      ) : (
-        <div className="dash-loading">Aucune zone disponible.</div>
       )}
+
+      {/* Journal des imports */}
+      <div className="panel">
+        <div className="panel-header">
+          Journal des imports{importsLoading ? " — chargement…" : ""}
+        </div>
+        <div className="history-table-wrap">
+          <table className="history-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Fichier</th>
+                <th>Par</th>
+                <th>Résultats</th>
+                <th>Statut</th>
+                {isSuperadmin && <th></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {imports.map((imp, i) => (
+                <tr
+                  key={imp.id}
+                  className={`${i % 2 === 0 ? "row-even" : ""}${imp.status === "annule" ? " history-imports-row cancelled" : ""}`}
+                >
+                  <td className="td-date">{fmtDateFull(imp.imported_at)}</td>
+                  <td>{imp.filename}</td>
+                  <td className="txt3">{imp.imported_by}</td>
+                  <td className="mono txt3">{imp.result_count}</td>
+                  <td>
+                    {imp.status === "annule"
+                      ? <span className="status-badge critical">Annulé{imp.cancelled_by ? ` · ${imp.cancelled_by}` : ""}</span>
+                      : <span className="status-badge ok">Actif</span>}
+                  </td>
+                  {isSuperadmin && (
+                    <td>
+                      {imp.status !== "annule" && (
+                        <button className="history-undo-btn" onClick={() => handleUndo(imp.id)}>
+                          Annuler cet import
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {imports.length === 0 && !importsLoading && (
+                <tr>
+                  <td colSpan={isSuperadmin ? 6 : 5} className="txt3" style={{ textAlign: "center", padding: 20 }}>
+                    Aucun import enregistré.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

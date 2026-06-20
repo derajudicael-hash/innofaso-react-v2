@@ -72,7 +72,7 @@ async function setup() {
       const insertSP = sql.match(/INSERT INTO sampling_points[\s\S]*?ON DUPLICATE KEY UPDATE[\s\S]*?;/)?.[0];
       if (createSP) await conn.query(createSP);
       if (insertSP) await conn.query(insertSP);
-      console.log("Table sampling_points créée avec 49 points de prélèvement.");
+      console.log("Table sampling_points créée avec 77 points de prélèvement.");
     }
   }
 

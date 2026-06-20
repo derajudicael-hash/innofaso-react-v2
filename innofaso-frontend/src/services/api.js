@@ -99,3 +99,21 @@ export const settingsAPI = {
   setSiteInfo: (data) =>
     request("/settings/site", { method: "PUT", body: JSON.stringify(data) }),
 };
+
+// ═══════════════════════════════════════════
+// LAB RESULTS (Import from files)
+// ═══════════════════════════════════════════
+export const labResultsAPI = {
+  import: (results, filename) =>
+    request("/lab-results/import", { method: "POST", body: JSON.stringify({ results, filename }) }),
+
+  listImports: () => request("/lab-results/imports"),
+
+  undoImport: (importId) =>
+    request(`/lab-results/${encodeURIComponent(importId)}/undo`, { method: "POST" }),
+
+  getPointHistory: (zoneMapId) =>
+    request(`/lab-results/history?zoneMapId=${encodeURIComponent(zoneMapId)}`),
+
+  getRetentionStatus: () => request("/lab-results/retention-status"),
+};

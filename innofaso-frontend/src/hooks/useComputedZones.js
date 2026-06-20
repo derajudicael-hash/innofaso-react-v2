@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useAdminData } from "../context/AdminDataContext";
 import { usePoints }    from "../context/PointsContext";
+import { getPointOverallLevel } from "../map/labParser.js";
 
 // Seuils réglementaires par type de point (NF EN ISO 18593 / EC 2073/2005)
 export const TYPE_SEUIL = { "1": 10, "2": 50, "3": 100, "4": 500 };
@@ -22,6 +23,21 @@ export function pointStatus(ufc, pointType) {
   return "ok";
 }
 
+function resultStatus(results) {
+  const level = getPointOverallLevel(results);
+  if (level === "red" || level === "present") return "critical";
+  if (level === "orange") return "warning";
+  if (level === "green" || level === "absent") return "ok";
+  return null;
+}
+
+export function resultUfc(results) {
+  const values = results
+    .map((r) => r.numericValue)
+    .filter((value) => value !== null && value !== undefined);
+  return values.length > 0 ? Math.max(...values) : null;
+}
+
 /**
  * Hook combinant zones (AdminDataContext) + points (PointsContext).
  *
@@ -31,7 +47,7 @@ export function pointStatus(ufc, pointType) {
  *            par rapport à son seuil réglementaire de type
  * - hasData = true si au moins un point a un UFC saisi
  */
-export function useComputedZones() {
+export function useComputedZones(activeResults = null) {
   const { zones, thresholds, loading, error, ...rest } = useAdminData();
   const { pointsByZone } = usePoints();
 
@@ -40,8 +56,23 @@ export function useComputedZones() {
       .filter(z => z.mapId)
       .map(z => {
         const pts      = pointsByZone[z.mapId] ?? [];
-        const measured = pts.filter(p => p.ufc !== null && p.ufc !== undefined);
-        const hasData  = measured.length > 0;
+        const ptsWithResults = activeResults
+          ? pts.map((pt) => {
+              const results = activeResults.get(pt.id) ?? [];
+              const importedUfc = resultUfc(results);
+              const importedStatus = results.length > 0 ? resultStatus(results) : null;
+              return {
+                ...pt,
+                ufc: importedUfc ?? pt.ufc,
+                importedStatus,
+                hasImportedResult: results.length > 0,
+              };
+            })
+          : pts;
+        const measured = ptsWithResults.filter(p => p.ufc !== null && p.ufc !== undefined);
+        const resultPoints = ptsWithResults.filter(p => p.hasImportedResult);
+        const statusPoints = resultPoints.length > 0 ? resultPoints : measured;
+        const hasData  = measured.length > 0 || resultPoints.length > 0;
 
         // UFC max pour affichage
         const maxUfc = hasData ? Math.max(...measured.map(p => p.ufc)) : null;
@@ -49,8 +80,8 @@ export function useComputedZones() {
         // Statut = pire statut parmi les points mesurés
         let status = "ok";
         if (hasData) {
-          for (const pt of measured) {
-            const st = pointStatus(pt.ufc, pt.pointType);
+          for (const pt of statusPoints) {
+            const st = pt.importedStatus ?? pointStatus(pt.ufc, pt.pointType);
             if (st === "critical") { status = "critical"; break; }
             if (st === "warning")    status = "warning";
           }
@@ -87,7 +118,7 @@ export function useComputedZones() {
           alertDesc:  alert.desc,
         };
       });
-  }, [zones, pointsByZone]);
+  }, [zones, pointsByZone, activeResults]);
 
   return { computedZones, thresholds, loading, error, ...rest };
 }

@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { useComputedZones } from "../hooks/useComputedZones";
 import { useTheme }         from "../context/ThemeContext";
-import { ZONES } from "../map/factoryData";
-
-const totalPoints = ZONES.reduce((acc, z) => acc + z.points.length, 0);
+import { usePersistedFiles } from "../map/usePersistedFiles.js";
+import { usePoints } from "../context/PointsContext";
+import { ZONES } from "../map/factoryData.js";
 
 const PAGE_META = {
   dashboard: { title: "Tableau de bord",  sub: "Surveillance temps réel · Usine Plumpy'Nut La Grâce" },
@@ -14,9 +14,10 @@ const PAGE_META = {
 };
 
 const THEMES = [
-  { id: "blanc",      label: "Blanc" },
-  { id: "tbtrack",    label: "TB" },
-  { id: "industriel", label: "Ind." },
+  { id: "blanc",      label: "P", icon: "☀️", desc: "Professionnel" },
+  { id: "burkina",    label: "E", icon: "💼", desc: "Entreprise" },
+  { id: "tbtrack",    label: "TB", icon: "🌊", desc: "TB Track" },
+  { id: "industriel", label: "I", icon: "⚙️", desc: "Industriel" },
 ];
 
 function CriticalBadge({ count }) {
@@ -30,19 +31,21 @@ function CriticalBadge({ count }) {
 }
 
 export default function Topbar({ clock, activeNav }) {
-  const { computedZones } = useComputedZones();
+  const { activeResults } = usePersistedFiles();
+  const { computedZones } = useComputedZones(activeResults);
   const { theme, setTheme } = useTheme();
+  const { points } = usePoints();
   const critCount = computedZones.filter((z) => z.status === "critical").length;
 
   const page = useMemo(() => {
     if (activeNav === "carto") {
       return {
         title: "Cartographie",
-        sub: `Plan interactif · ${ZONES.length} zones · ${totalPoints} points de prélèvement`,
+        sub: `Plan interactif · ${ZONES.length} zones · ${points.length} points de prélèvement`,
       };
     }
     return PAGE_META[activeNav] ?? PAGE_META.dashboard;
-  }, [activeNav]);
+  }, [activeNav, points.length]);
 
   return (
     <header className="topbar">

@@ -1,24 +1,3 @@
-export type ZoneCategory = 'white' | 'grey' | 'vestiaire' | 'laverie' | 'external';
-
-export interface SamplingPoint {
-  id: string;
-  label: string;
-  x: number; // % of SVG viewBox width (1515)
-  y: number; // % of SVG viewBox height (490)
-  pointType: '1' | '2' | '3' | '4';
-  description: string;
-  ufc?: number | null;
-}
-
-export interface Zone {
-  id: string;
-  name: string;
-  area?: string;
-  category: ZoneCategory;
-  x: number; y: number; width: number; height: number; // all %
-  points: SamplingPoint[];
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 // Pixel-accurate measurements from the 1515×490 factory floor image
 // Reference columns (% of 1515):
@@ -30,7 +9,7 @@ export interface Zone {
 //   vestiaire-bottom=100
 // ─────────────────────────────────────────────────────────────────────────
 
-export const ZONES: Zone[] = [
+export const ZONES = [
 
   // ── GREY LEFT: Stockage PF ──────────────────────────────────────────
   {
@@ -250,7 +229,10 @@ export const ZONES: Zone[] = [
     ]
   },
 
-  // ── LABO MICROBIOLOGIE (bleu) ────────────────────────────────────────
+  // ── LABO MICROBIOLOGIE (bleu) — pochette libre entre Toilettes F et le
+  // bord du mur extérieur bas (83.8 → 88.8, déjà la limite du mur ligne
+  // 110 de FactoryMap.jsx), jamais câblée jusqu'ici malgré l'existence
+  // réelle de la salle "4.17 Laboratoire Microbiologie" au catalogue officiel ──
   {
     id: 'labo_microbiologie',
     name: 'Labo Microbiologie',
@@ -265,9 +247,16 @@ export const ZONES: Zone[] = [
   },
 ];
 
-export const ALL_POINT_IDS: string[] = ZONES.flatMap(z => z.points.map(p => p.id));
+export const ALL_POINT_IDS = ZONES.flatMap(z => z.points.map(p => p.id));
 
-export function extractPointId(raw: string): string {
+export function extractPointId(raw) {
   const m = raw.trim().match(/^(\d+\.\d+(?:\.\d+)?)/);
   return m ? m[1] : '';
+}
+
+// Points "aléatoires" créés en administration : identifiant à 2 segments
+// {pointType}.{seq} (ex. "2.7"), à la différence des points officiels qui
+// en ont 3 (ex. "4.12.1").
+export function isRandomPointId(id) {
+  return /^\d+\.\d+$/.test(String(id).trim());
 }
