@@ -185,17 +185,6 @@ function ZonesTab() {
 // ─────────────────────────────────────────────
 // TAB 3 — POINTS DE PRELEVEMENT
 // ─────────────────────────────────────────────
-const VW = 1515, VH = 490;
-const px = (p) => (p / 100) * VW;
-const py = (p) => (p / 100) * VH;
-
-const ZONE_COLORS = {
-  white:    { fill: "#dbeafe", stroke: "#3b82f6" },
-  grey:     { fill: "#e5e7eb", stroke: "#9ca3af" },
-  vestiaire:{ fill: "#fce7f3", stroke: "#ec4899" },
-  laverie:  { fill: "#fef9c3", stroke: "#ca8a04" },
-  external: { fill: "#f3f4f6", stroke: "#6b7280" },
-};
 
 // Au-delà de ce délai sans nouvelle mesure réelle, un point reste affiché
 // avec son ancien statut sans que rien ne signale qu'il n'est plus à jour —
@@ -215,129 +204,20 @@ const PT_TYPES = [
   { value: "4", label: "Type 4 — Zone grise / externe",           color: "#9ca3af" },
 ];
 
-// MiniMap — clique pour placer un nouveau point, glisse pour déplacer un existant
-function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPointDragEnd, editingId }) {
-  const svgRef      = useRef(null);
-  const dragId      = useRef(null);   // id du point en cours de drag
-  const dragZone    = useRef(null);   // zoneMapId du point dragué
-  const justDragged = useRef(false);  // évite que le click se déclenche après un drag
-  const [dragPos, setDragPos] = useState(null); // { id, x, y } en % — feedback visuel
-
-  const pct = (e) => {
-    const r = svgRef.current.getBoundingClientRect();
-    return {
-      x: +Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width)  * 100)).toFixed(1),
-      y: +Math.min(100, Math.max(0, ((e.clientY - r.top)  / r.height) * 100)).toFixed(1),
-    };
-  };
-
-  const onPtMouseDown = (e, id, zoneId) => {
-    if (!onPointDragEnd) return;
-    e.stopPropagation();
-    e.preventDefault();
-    dragId.current   = id;
-    dragZone.current = zoneId;
-    const { x, y } = pct(e);
-    setDragPos({ id, x, y });
-  };
-
-  const onMouseMove = (e) => {
-    if (!dragId.current) return;
-    const { x, y } = pct(e);
-    setDragPos({ id: dragId.current, x, y });
-  };
-
-  const onMouseUp = (e) => {
-    if (!dragId.current) return;
-    const { x, y } = pct(e);
-    justDragged.current = true;
-    setTimeout(() => { justDragged.current = false; }, 80);
-    onPointDragEnd(dragId.current, String(x), String(y));
-    dragId.current = null;
-    dragZone.current = null;
-    setDragPos(null);
-  };
-
-  const onSvgClick = (e) => {
-    if (justDragged.current || !onPlaceClick) return;
-    const { x, y } = pct(e);
-    onPlaceClick(String(x), String(y));
-  };
-
-  return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${VW} ${VH}`}
-      style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 8, background: "#f9fafb",
-               cursor: dragId.current ? "grabbing" : onPlaceClick ? "crosshair" : "default",
-               userSelect: "none", touchAction: "none" }}
-      onClick={onSvgClick}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-    >
-      {ZONES.map(zone => {
-        const col = ZONE_COLORS[zone.category] ?? ZONE_COLORS.grey;
-        const isHL = highlightZone === zone.id;
-        const pts  = pointsByZone?.[zone.id] ?? [];
-        return (
-          <g key={zone.id}>
-            <rect x={px(zone.x)} y={py(zone.y)} width={px(zone.width)} height={py(zone.height)}
-              fill={isHL ? col.stroke : col.fill} stroke={col.stroke}
-              strokeWidth={isHL ? 3 : 1.5} opacity={0.85} />
-            <text x={px(zone.x) + px(zone.width) / 2} y={py(zone.y) + 14}
-              textAnchor="middle" fontSize="8" fontWeight="700" fill="#1e3a5f"
-              fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
-              {zone.name}
-            </text>
-            {pts.map(pt => {
-              const typeCol  = PT_TYPES.find(t => t.value === pt.pointType)?.color ?? "#9ca3af";
-              const isActive = editingId === pt.id;
-              const isDragging = dragPos?.id === pt.id;
-              const cx = isDragging ? px(dragPos.x) : px(pt.x);
-              const cy = isDragging ? py(dragPos.y) : py(pt.y);
-              return (
-                <g key={pt.id}
-                  style={{ cursor: onPointDragEnd ? "grab" : "default" }}
-                  onMouseDown={onPointDragEnd ? (e) => onPtMouseDown(e, pt.id, zone.id) : undefined}
-                >
-                  <circle cx={cx} cy={cy} r={isDragging ? 10 : isActive ? 9 : 6}
-                    fill={typeCol} stroke={isDragging || isActive ? "#ef4444" : "white"}
-                    strokeWidth={isDragging || isActive ? 2.5 : 1.5} opacity={0.95} />
-                  {(isActive || isDragging) && (
-                    <text x={cx + 12} y={cy + 4} fontSize="8" fill="#ef4444"
-                      fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: "none" }}>
-                      {pt.label}{isDragging ? ` (${dragPos.x}%, ${dragPos.y}%)` : ""}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-          </g>
-        );
-      })}
-      {crosshair && (
-        <g style={{ pointerEvents: "none" }}>
-          <line x1={px(Number(crosshair.x))} y1={0} x2={px(Number(crosshair.x))} y2={VH}
-            stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" opacity={0.7}/>
-          <line x1={0} y1={py(Number(crosshair.y))} x2={VW} y2={py(Number(crosshair.y))}
-            stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" opacity={0.7}/>
-          <circle cx={px(Number(crosshair.x))} cy={py(Number(crosshair.y))} r={8}
-            fill="#ef4444" stroke="white" strokeWidth={2}/>
-        </g>
-      )}
-    </svg>
-  );
-}
-
 function PointsTab() {
-  const { points, pointsByZone, updatePoint, addPoint, deletePoint } = usePoints();
+  const { points, pointsByZone, updatePoint, addPoint, registerPoint, deletePoint } = usePoints();
   const { activeResults } = usePersistedFiles();
   const [selectedZoneId, setSelectedZoneId] = useState(ZONES[0]?.id ?? "");
   const [editing, setEditing] = useState(null); // objet point en cours
-  const [draft,   setDraft]   = useState({ x: "", y: "", ufc: "" });
+  const [draft,   setDraft]   = useState({ ufc: "" });
   const [error,   setError]   = useState("");
   const [saved,   flashSave]  = useFlash();
+
+  // Notification visible quand un point part en "Points à placer" car la
+  // zone n'a pas pu être déterminée automatiquement (ou confirmation quand
+  // il a bien été rattaché tout seul) — même type de bannière que l'avis
+  // d'import non reconnu sur la Cartographie, pour rester cohérent.
+  const [notice, setNotice] = useState(null); // { type: "warning"|"success", text }
 
   // Récidive : un point dont au moins 2 des 3 derniers relevés réels sont déjà
   // non conformes (pas seulement le dernier) — signal de tendance en plus du
@@ -361,8 +241,14 @@ function PointsTab() {
   }, [selectedZoneId]);
 
   const [creating, setCreating]       = useState(false);
-  const [createDraft, setCreateDraft] = useState({ type: "1", x: "", y: "", label: "", description: "" });
+  const [createDraft, setCreateDraft] = useState({ type: "1", label: "", description: "" });
   const [createError, setCreateError] = useState("");
+
+  // ── Ajout d'un point officiel (ID réel + description, zone auto-détectée) ──
+  const [registering, setRegistering]       = useState(false);
+  const [registerDraft, setRegisterDraft]   = useState({ pointId: "", description: "", ufc: "" });
+  const [registerError, setRegisterError]   = useState("");
+  const [registerBusy, setRegisterBusy]     = useState(false);
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [deleteError, setDeleteError]          = useState("");
@@ -385,52 +271,32 @@ function PointsTab() {
         cronoDetected,
       };
     });
-  const crosshair  = editing  && draft.x !== "" && draft.y !== ""       ? { x: draft.x, y: draft.y } : null;
-  const createCrosshair = creating && createDraft.x !== "" && createDraft.y !== "" ? { x: createDraft.x, y: createDraft.y } : null;
+  const openEdit = (pt) => {
+    cancelCreate();
+    cancelRegister();
+    setEditing(pt);
+    setDraft({ ufc: pt.ufc !== null ? String(pt.ufc) : "" });
+    setError("");
+  };
 
-  const doUpdate = async (id, x, y, ufc) => {
-    const pt = points.find(p => p.id === id);
-    if (!pt) return;
-    const ufcVal = ufc !== undefined ? ufc : pt.ufc;
+  const cancel = () => { setEditing(null); setDraft({ ufc: "" }); setError(""); };
+
+  const save = async () => {
+    if (draft.ufc !== "" && (isNaN(Number(draft.ufc)) || Number(draft.ufc) < 0)) return setError("UFC doit être un nombre positif.");
+    setError("");
+    const ufcVal = draft.ufc !== "" ? Number(draft.ufc) : null;
     try {
-      await updatePoint(id, {
-        zone_map_id: pt.zoneMapId, label: pt.label,
-        x: Number(x), y: Number(y),
-        point_type: pt.pointType, description: pt.description,
-        ufc: ufcVal,
-      });
+      await updatePoint(editing.id, { ufc: ufcVal });
       flashSave();
+      cancel();
     } catch (err) {
       const msg = err.message || "";
       setError(msg.includes("Token") ? "Session expirée — reconnectez-vous." : msg || "Erreur serveur.");
     }
   };
 
-  // Drag direct sur la mini-carte
-  const handleDragEnd = (id, x, y) => doUpdate(id, x, y);
-
-  // Clic sur la mini-carte en mode édition → met à jour les coords dans le formulaire
-  const handleMapClick = (x, y) => setDraft(d => ({ ...d, x, y }));
-
-  const openEdit = (pt) => {
-    cancelCreate();
-    setEditing(pt);
-    setDraft({ x: String(pt.x), y: String(pt.y), ufc: pt.ufc !== null ? String(pt.ufc) : "" });
-    setError("");
-  };
-
-  const cancel = () => { setEditing(null); setDraft({ x: "", y: "", ufc: "" }); setError(""); };
-
-  const save = async () => {
-    if (draft.x === "" || draft.y === "") return setError("Coordonnées requises.");
-    if (draft.ufc !== "" && (isNaN(Number(draft.ufc)) || Number(draft.ufc) < 0)) return setError("UFC doit être un nombre positif.");
-    setError("");
-    const ufcVal = draft.ufc !== "" ? Number(draft.ufc) : null;
-    await doUpdate(editing.id, draft.x, draft.y, ufcVal);
-    cancel();
-  };
-
-  // ── Points aléatoires : création ──────────────────────────
+  // ── Points aléatoires : création (zone déjà choisie via les onglets,
+  // position calculée automatiquement par le serveur) ──────────────────
   const nextSeqForType = (type) => {
     const seqs = points
       .filter(p => isRandomPointId(p.id) && p.id.split(".")[0] === type)
@@ -441,21 +307,19 @@ function PointsTab() {
 
   const startCreate = () => {
     cancel();
+    cancelRegister();
     setCreateError("");
-    setCreateDraft({ type: "1", x: "", y: "", label: "", description: "" });
+    setCreateDraft({ type: "1", label: "", description: "" });
     setCreating(true);
   };
 
   const cancelCreate = () => {
     setCreating(false);
     setCreateError("");
-    setCreateDraft({ type: "1", x: "", y: "", label: "", description: "" });
+    setCreateDraft({ type: "1", label: "", description: "" });
   };
 
-  const handleCreateMapClick = (x, y) => setCreateDraft(d => ({ ...d, x, y }));
-
   const submitCreate = async () => {
-    if (createDraft.x === "" || createDraft.y === "") return setCreateError("Cliquez sur le plan pour placer le point.");
     if (!createDraft.description.trim()) return setCreateError("Description requise.");
     const seq = nextSeqForType(createDraft.type);
     const id  = `${createDraft.type}.${seq}`;
@@ -465,7 +329,6 @@ function PointsTab() {
         id,
         zone_map_id: selectedZoneId,
         label: createDraft.label.trim() || id,
-        x: Number(createDraft.x), y: Number(createDraft.y),
         point_type: createDraft.type,
         description: createDraft.description.trim(),
         ufc: null,
@@ -474,6 +337,56 @@ function PointsTab() {
       flashSave();
     } catch (err) {
       setCreateError(err.message || "Erreur lors de la création du point.");
+    }
+  };
+
+  // ── Ajout d'un point officiel (ID réel E.S.N + description + UFC,
+  // comme une ligne de bulletin) — la zone est devinée automatiquement par
+  // le serveur (salle puis mots-clés) ; si ça échoue, le point part dans
+  // "Points à placer" et l'admin en est averti ici même. ────────────────
+  const startRegister = () => {
+    cancel();
+    cancelCreate();
+    setRegisterError("");
+    setRegisterDraft({ pointId: "", description: "", ufc: "" });
+    setRegistering(true);
+  };
+
+  const cancelRegister = () => {
+    setRegistering(false);
+    setRegisterError("");
+    setRegisterDraft({ pointId: "", description: "", ufc: "" });
+  };
+
+  const submitRegister = async () => {
+    if (!registerDraft.pointId.trim())    return setRegisterError("Identifiant requis (ex : 1.1.1).");
+    if (!registerDraft.description.trim()) return setRegisterError("Description requise.");
+    if (registerDraft.ufc !== "" && (isNaN(Number(registerDraft.ufc)) || Number(registerDraft.ufc) < 0)) {
+      return setRegisterError("UFC doit être un nombre positif.");
+    }
+    setRegisterError("");
+    setRegisterBusy(true);
+    setNotice(null);
+    try {
+      const result = await registerPoint({
+        pointId: registerDraft.pointId.trim(),
+        description: registerDraft.description.trim(),
+        ufc: registerDraft.ufc !== "" ? Number(registerDraft.ufc) : null,
+      });
+      if (result.pending) {
+        setNotice({
+          type: "warning",
+          text: `Le point "${registerDraft.pointId.trim()}" a été mis dans "Points à placer" — le système n'a pas pu déterminer sa zone automatiquement. Placez-le manuellement depuis cet onglet.`,
+        });
+      } else {
+        const zoneName = ZONES.find(z => z.id === result.zoneMapId)?.name ?? result.zoneMapId;
+        setNotice({ type: "success", text: `Point "${registerDraft.pointId.trim()}" créé dans la zone "${zoneName}".` });
+      }
+      cancelRegister();
+    } catch (err) {
+      setRegisterError(err.message || "Erreur lors de l'enregistrement du point.");
+    } finally {
+      setRegisterBusy(false);
     }
   };
 
@@ -516,9 +429,21 @@ function PointsTab() {
             )}
           </div>
 
-          <button className="btn-add" onClick={startCreate} disabled={creating}>
-            <Icon name="plus" size={13} strokeWidth={2.5} /> Point aléatoire
-          </button>
+          {notice && (
+            <div className={`pts-notice pts-notice--${notice.type}`}>
+              <span>{notice.type === "warning" ? "⚠️ " : "✅ "}{notice.text}</span>
+              <button onClick={() => setNotice(null)} aria-label="Fermer">×</button>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn-add" onClick={startCreate} disabled={creating}>
+              <Icon name="plus" size={13} strokeWidth={2.5} /> Point aléatoire
+            </button>
+            <button className="btn-add" onClick={startRegister} disabled={registering}>
+              <Icon name="plus" size={13} strokeWidth={2.5} /> Ajouter un point officiel
+            </button>
+          </div>
 
           {zonePoints.length === 0 ? (
             <p className="pts-empty">Aucun point dans cette zone.</p>
@@ -526,7 +451,7 @@ function PointsTab() {
             <div className="pts-table-wrap">
               <table className="pts-table">
                 <thead>
-                  <tr><th>ID</th><th>Libellé</th><th>Type</th><th>X%</th><th>Y%</th><th>UFC/cm²</th><th>Dernière mesure</th><th></th></tr>
+                  <tr><th>ID</th><th>Libellé</th><th>Type</th><th>UFC/cm²</th><th>Dernière mesure</th><th></th></tr>
                 </thead>
                 <tbody>
                   {zonePoints.map(pt => {
@@ -549,8 +474,6 @@ function PointsTab() {
                           <span className="pts-type-dot" style={{ background: typeInfo?.color }} />
                           T{pt.pointType}
                         </td>
-                        <td className="pts-num">{isEditing ? draft.x : pt.x}</td>
-                        <td className="pts-num">{isEditing ? draft.y : pt.y}</td>
                         <td className={`pts-num${isMax ? " pts-ufc-max" : ""}`}>
                           {pt.displayUfc !== null ? pt.displayUfc : <span className="pts-ufc-empty">—</span>}
                           {isMax && <span className="pts-ufc-badge" title="Valeur la plus élevée de la zone">▲</span>}
@@ -599,39 +522,25 @@ function PointsTab() {
             </div>
           )}
 
-          <FlashMsg visible={saved} text="Position enregistrée" />
+          <FlashMsg visible={saved} text="Enregistré" />
           {error && <p className="pts-error">{error}</p>}
           {deleteError && <p className="pts-error">{deleteError}</p>}
         </div>
 
-        {/* ── Colonne droite : mini-carte + formulaire ── */}
+        {/* ── Colonne droite : formulaires (plus de carte — la position n'a
+             jamais été une donnée réelle, juste un repère visuel) ── */}
         <div className="pts-right">
-          <p className="pts-map-hint">
-            {editing
-              ? `Déplacement de "${editing.label}" — cliquez sur le plan ou saisissez les coordonnées.`
-              : creating
-              ? "Cliquez sur le plan pour placer le nouveau point aléatoire."
-              : "Glissez un point directement sur le plan pour le déplacer, ou cliquez sur le crayon pour saisir les coordonnées manuellement."}
-          </p>
-          <MiniMap
-            pointsByZone={pointsByZone}
-            highlightZone={selectedZoneId}
-            crosshair={crosshair ?? createCrosshair}
-            editingId={editing?.id ?? null}
-            onPlaceClick={editing ? handleMapClick : creating ? handleCreateMapClick : null}
-            onPointDragEnd={!editing && !creating ? handleDragEnd : null}
-          />
+          {!editing && !creating && !registering && (
+            <p className="pts-map-hint">
+              Sélectionnez "Modifier" sur un point pour corriger son UFC, ou utilisez les boutons
+              ci-contre pour ajouter un point aléatoire ou un point officiel.
+            </p>
+          )}
 
           {editing && (
             <div className="pts-form">
-              <div className="pts-form-title">Déplacer — {editing.label}</div>
+              <div className="pts-form-title">Modifier — {editing.label}</div>
               <div className="adm-form-grid">
-                <Field label="X — horizontal (0–100 %)">
-                  <Inp value={draft.x} onChange={(v) => setDraft(d => ({ ...d, x: v }))} type="number" placeholder="ex : 30.5" />
-                </Field>
-                <Field label="Y — vertical (0–100 %)">
-                  <Inp value={draft.y} onChange={(v) => setDraft(d => ({ ...d, y: v }))} type="number" placeholder="ex : 45.0" />
-                </Field>
                 <Field label="UFC/cm² (résultat de labo, optionnel)">
                   <Inp value={draft.ufc} onChange={(v) => setDraft(d => ({ ...d, ufc: v }))} type="number" placeholder="ex : 24 — laisser vide si non mesuré" />
                 </Field>
@@ -668,17 +577,40 @@ function PointsTab() {
                 <Field label="Description">
                   <Inp value={createDraft.description} onChange={(v) => setCreateDraft(d => ({ ...d, description: v }))} placeholder="ex : Poignée de porte chambre froide" />
                 </Field>
-                <Field label="X — horizontal (0–100 %)">
-                  <Inp value={createDraft.x} onChange={(v) => setCreateDraft(d => ({ ...d, x: v }))} type="number" placeholder="Cliquez sur le plan" />
-                </Field>
-                <Field label="Y — vertical (0–100 %)">
-                  <Inp value={createDraft.y} onChange={(v) => setCreateDraft(d => ({ ...d, y: v }))} type="number" placeholder="Cliquez sur le plan" />
-                </Field>
               </div>
               {createError && <p className="pts-error">{createError}</p>}
               <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
                 <button className="btn-save" onClick={submitCreate}>Créer le point</button>
                 <button className="adm-btn-cancel" onClick={cancelCreate}>Annuler</button>
+              </div>
+            </div>
+          )}
+
+          {registering && (
+            <div className="pts-form">
+              <div className="pts-form-title">Ajouter un point officiel</div>
+              <p className="adm-desc" style={{ marginTop: 0 }}>
+                Saisissez le point exactement comme il apparaît dans un bulletin — la zone est
+                détectée automatiquement (par salle puis par mots-clés de la description). Si le
+                système n'y arrive pas, le point part dans "Points à placer".
+              </p>
+              <div className="adm-form-grid">
+                <Field label="ID Points de prélèvement (ex : 1.1.1)">
+                  <Inp value={registerDraft.pointId} onChange={(v) => setRegisterDraft(d => ({ ...d, pointId: v }))} placeholder="ex : 1.1.1" />
+                </Field>
+                <Field label="Description (ex : Couteaux salle de pesée mélange)">
+                  <Inp value={registerDraft.description} onChange={(v) => setRegisterDraft(d => ({ ...d, description: v }))} placeholder="ex : Couteaux salle de pesée mélange" />
+                </Field>
+                <Field label="Résultat en UFC Entérobactéries/cm² (optionnel)">
+                  <Inp value={registerDraft.ufc} onChange={(v) => setRegisterDraft(d => ({ ...d, ufc: v }))} type="number" placeholder="ex : 9 — laisser vide si non mesuré" />
+                </Field>
+              </div>
+              {registerError && <p className="pts-error">{registerError}</p>}
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                <button className="btn-save" onClick={submitRegister} disabled={registerBusy}>
+                  {registerBusy ? "Enregistrement…" : "Enregistrer le point"}
+                </button>
+                <button className="adm-btn-cancel" onClick={cancelRegister}>Annuler</button>
               </div>
             </div>
           )}

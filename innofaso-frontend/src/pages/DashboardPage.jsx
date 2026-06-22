@@ -179,7 +179,6 @@ export default function DashboardPage() {
                   dynamicPoints={pointsByZone}
                   selectedZone={selectedMapZone}
                   onSelectZone={zone => { setSelectedMapZone(zone); setSelectedPoint(null); }}
-                  onSelectPoint={(pt, zone) => { setSelectedMapZone(zone); setSelectedPoint(pt); }}
                 />
               </div>
             </div>

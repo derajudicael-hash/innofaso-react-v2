@@ -183,14 +183,11 @@ const ID_RENAMES = [
     // n'existait pas encore quand certaines entrées en attente ont été créées —
     // on retente leur résolution automatique à chaque démarrage, pour ne pas
     // laisser à l'admin des points que le système sait désormais placer seul.
-    const { parsePointId, resolveZoneForRoom, guessZoneFromDescription, placePendingPoint } = require("./lib/pointResolution");
+    const { resolvePointZone, placePendingPoint } = require("./lib/pointResolution");
     const [stuckPending] = await db.query("SELECT * FROM pending_points");
     let autoResolved = 0;
     for (const row of stuckPending) {
-      const parsed = parsePointId(row.point_id);
-      const zoneMapId =
-        (parsed ? await resolveZoneForRoom(parsed.room) : null) ||
-        guessZoneFromDescription(row.description);
+      const { zoneMapId } = await resolvePointZone(row.point_id, row.description);
       if (!zoneMapId) continue;
       await placePendingPoint(row, zoneMapId);
       await db.query("DELETE FROM pending_points WHERE id = ?", [row.id]);

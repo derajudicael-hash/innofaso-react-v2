@@ -1,6 +1,7 @@
 const express = require("express");
 const db      = require("../db");
 const auth             = require("../middleware/auth");
+const { computeNewPointPosition, resolvePointZone, inferPointType, queuePending } = require("../lib/pointResolution");
 
 const router = express.Router();
 
@@ -28,18 +29,24 @@ router.get("/", async (req, res) => {
 });
 
 // POST /api/points — créer un point (tout compte connecté : superadmin ou éditeur)
+//
+// x/y sont désormais optionnels : la position sur la carte n'a jamais été
+// une donnée réelle (juste un repère visuel pour ne pas superposer les
+// points), donc si le client ne les fournit pas, le serveur les calcule
+// lui-même (même éventail que pour les points créés par import de bulletin).
 router.post("/", auth, async (req, res) => {
   const { id, zone_map_id, label, x, y, point_type, description, ufc } = req.body;
-  if (!id || !zone_map_id || !label || x === undefined || y === undefined) {
-    return res.status(400).json({ error: "id, zone_map_id, label, x, y sont requis." });
+  if (!id || !zone_map_id || !label) {
+    return res.status(400).json({ error: "id, zone_map_id et label sont requis." });
   }
   const ufcVal = (ufc !== undefined && ufc !== null && ufc !== "") ? Number(ufc) : null;
   try {
+    const pos = (x !== undefined && y !== undefined) ? { x: Number(x), y: Number(y) } : await computeNewPointPosition(zone_map_id);
     await db.query(
       "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
-      [id.trim(), zone_map_id, label.trim(), Number(x), Number(y), point_type || "1", description || "", ufcVal]
+      [id.trim(), zone_map_id, label.trim(), pos.x, pos.y, point_type || "1", description || "", ufcVal]
     );
-    res.status(201).json({ id: id.trim(), zone_map_id, label: label.trim(), x: Number(x), y: Number(y), point_type: point_type || "1", description: description || "", ufc: ufcVal });
+    res.status(201).json({ id: id.trim(), zone_map_id, label: label.trim(), x: pos.x, y: pos.y, point_type: point_type || "1", description: description || "", ufc: ufcVal });
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY") {
       return res.status(409).json({ error: `L'identifiant "${id}" existe déjà.` });
@@ -49,14 +56,91 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// PUT /api/points/:id — modifier un point (tout compte connecté : superadmin ou éditeur)
-router.put("/:id", auth, async (req, res) => {
-  const { zone_map_id, label, x, y, point_type, description, ufc } = req.body;
+// ─────────────────────────────────────────────
+// POST /api/points/register — enregistre manuellement un point officiel
+// (ID réel E.S.N + description + résultat UFC, comme une ligne de bulletin)
+// avant même qu'un bulletin ne le rapporte. La zone est déterminée
+// automatiquement (salle puis mots-clés, cf. resolvePointZone) — si le
+// système n'y arrive pas, le point part dans "Points à placer" comme à
+// l'import, et l'admin en est informé pour pouvoir le placer lui-même.
+// ─────────────────────────────────────────────
+router.post("/register", auth, async (req, res) => {
+  const { pointId, description, ufc } = req.body;
+  if (!pointId?.trim() || !description?.trim()) {
+    return res.status(400).json({ error: "Identifiant et description sont requis." });
+  }
+  const id = pointId.trim();
   const ufcVal = (ufc !== undefined && ufc !== null && ufc !== "") ? Number(ufc) : null;
+
   try {
+    const [[existingPoint]] = await db.query("SELECT id FROM sampling_points WHERE id = ?", [id]);
+    if (existingPoint) {
+      return res.status(409).json({ error: `Le point "${id}" existe déjà.` });
+    }
+
+    const { parsed, zoneMapId } = await resolvePointZone(id, description.trim());
+
+    if (zoneMapId) {
+      const pointType = inferPointType(parsed, id);
+      const pos = await computeNewPointPosition(zoneMapId);
+      await db.query(
+        "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
+        [id, zoneMapId, id, pos.x, pos.y, pointType, description.trim(), ufcVal]
+      );
+      if (parsed?.room != null) {
+        await db.query(
+          "INSERT INTO room_zone_map (room, zone_map_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE zone_map_id = VALUES(zone_map_id)",
+          [parsed.room, zoneMapId]
+        );
+      }
+      return res.status(201).json({
+        created: true, pending: false, zoneMapId,
+        point: { id, zone_map_id: zoneMapId, label: id, x: pos.x, y: pos.y, point_type: pointType, description: description.trim(), ufc: ufcVal },
+      });
+    }
+
+    await queuePending({
+      pointId: id,
+      room: parsed?.room ?? null,
+      pointType: parsed?.env ?? null,
+      description: description.trim(),
+      ufc: ufcVal,
+      salmonella: null,
+      cronobacter: null,
+      importId: null,
+      recordedAt: null,
+    });
+    res.status(202).json({ created: false, pending: true });
+  } catch (err) {
+    console.error("POST /points/register error:", err);
+    res.status(500).json({ error: "Erreur serveur." });
+  }
+});
+
+// PUT /api/points/:id — modifier un point (tout compte connecté : superadmin ou éditeur)
+//
+// Mise à jour partielle : seuls les champs effectivement fournis dans le
+// corps de la requête sont modifiés, les autres gardent leur valeur actuelle
+// (ex. l'admin ne corrige que l'UFC sans devoir renvoyer position/zone/libellé).
+router.put("/:id", auth, async (req, res) => {
+  try {
+    const [[existing]] = await db.query("SELECT * FROM sampling_points WHERE id = ?", [req.params.id]);
+    if (!existing) return res.status(404).json({ error: "Point introuvable." });
+
+    const body = req.body || {};
+    const zone_map_id  = "zone_map_id"  in body ? body.zone_map_id  : existing.zone_map_id;
+    const label         = "label"        in body ? body.label        : existing.label;
+    const x             = "x"            in body ? Number(body.x)    : Number(existing.x);
+    const y             = "y"            in body ? Number(body.y)    : Number(existing.y);
+    const point_type    = "point_type"   in body ? (body.point_type || "1") : existing.point_type;
+    const description   = "description"  in body ? (body.description || "") : existing.description;
+    const ufcVal = "ufc" in body
+      ? ((body.ufc !== null && body.ufc !== "") ? Number(body.ufc) : null)
+      : (existing.ufc !== null ? Number(existing.ufc) : null);
+
     const [result] = await db.query(
       "UPDATE sampling_points SET zone_map_id=?, label=?, x=?, y=?, point_type=?, description=?, ufc=? WHERE id=?",
-      [zone_map_id, label, Number(x), Number(y), point_type || "1", description || "", ufcVal, req.params.id]
+      [zone_map_id, label, x, y, point_type, description, ufcVal, req.params.id]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: "Point introuvable." });
 
@@ -80,7 +164,7 @@ router.put("/:id", auth, async (req, res) => {
       }
     }
 
-    res.json({ id: req.params.id, zone_map_id, label, x: Number(x), y: Number(y), point_type: point_type || "1", description: description || "", ufc: ufcVal });
+    res.json({ id: req.params.id, zone_map_id, label, x, y, point_type, description, ufc: ufcVal });
   } catch (err) {
     console.error("PUT /points/:id error:", err);
     res.status(500).json({ error: "Erreur serveur." });

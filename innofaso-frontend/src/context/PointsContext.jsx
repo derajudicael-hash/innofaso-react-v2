@@ -92,6 +92,17 @@ export function PointsProvider({ children }) {
     }
   };
 
+  // Enregistrement d'un point officiel (ID réel + description + UFC) : la
+  // zone est déterminée côté serveur (salle puis mots-clés), donc pas
+  // d'équivalent hors-ligne possible — les erreurs remontent à l'appelant.
+  const registerPoint = async (data) => {
+    const result = await pointsAPI.register(data);
+    if (result.created && result.point) {
+      setPoints(prev => [...prev, toFrontend(result.point)]);
+    }
+    return result; // { created, pending, zoneMapId? }
+  };
+
   const updatePoint = async (id, data) => {
     try {
       const updated = await pointsAPI.update(id, data);
@@ -112,7 +123,7 @@ export function PointsProvider({ children }) {
   };
 
   return (
-    <PointsContext.Provider value={{ points, pointsByZone, ufcByZone, addPoint, updatePoint, deletePoint, loading, error, reload: load }}>
+    <PointsContext.Provider value={{ points, pointsByZone, ufcByZone, addPoint, registerPoint, updatePoint, deletePoint, loading, error, reload: load }}>
       {children}
     </PointsContext.Provider>
   );

@@ -225,7 +225,6 @@ export default function CartoPage() {
             dynamicPoints={pointsByZone}
             selectedZone={selectedZone}
             onSelectZone={zone => { setSelectedZone(zone); setSelectedPoint(null); }}
-            onSelectPoint={(pt, zone) => { setSelectedZone(zone); setSelectedPoint(pt); }}
           />
         </div>
         {selectedZone && (

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useRef, useState, useCallback } from 'react';
-import { ZONES, isRandomPointId } from './factoryData.js';
-import { getPointOverallLevel, getZoneLevel, LEVEL_COLORS } from './labParser.js';
+import { ZONES } from './factoryData.js';
+import { getZoneLevel, LEVEL_COLORS } from './labParser.js';
 
 // ViewBox exactly matching the image proportions: ~1515 × 490
 const VW = 1515, VH = 490;
@@ -12,7 +12,6 @@ const py = (p) => (p / 100) * VH;
 // Gray defaults
 const GRAY_ZONE_FILL   = '#e4e7eb';
 const GRAY_ZONE_STROKE = '#9ca3af';
-const GRAY_DOT         = '#9ca3af';
 
 // Zone fills when data is present
 const ZONE_DATA_FILL = {
@@ -28,11 +27,10 @@ const ZONE_DATA_FILL = {
 const BACKEND_FILL   = { ok: '#bbf7d0', warning: '#fde68a', critical: '#fecaca' };
 const BACKEND_STROKE = { ok: '#22c55e', warning: '#f59e0b', critical: '#ef4444' };
 
-export default function FactoryMap({ results, backendZones = [], dynamicPoints, selectedZone, onSelectZone, onSelectPoint }) {
+export default function FactoryMap({ results, backendZones = [], dynamicPoints, selectedZone, onSelectZone }) {
   const svgRef = useRef(null);
   const [vb, setVb] = useState({ x: 0, y: 0, w: VW, h: VH });
   const [hovZone, setHovZone] = useState(null);
-  const [hovPt, setHovPt] = useState(null);
   const panning = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const hasData = results.size > 0;
@@ -222,52 +220,6 @@ export default function FactoryMap({ results, backendZones = [], dynamicPoints, 
                   style={{ pointerEvents: 'none' }}/>
               )}
 
-              {/* Sampling point dots */}
-              {zonePts.map(pt => {
-                const ptResults = results.get(pt.id) ?? [];
-                const ptLevel = ptResults.length > 0 ? getPointOverallLevel(ptResults) : 'unknown';
-                const dotColor = ptResults.length > 0 ? LEVEL_COLORS[ptLevel] : GRAY_DOT;
-                const ptx = px(pt.x), pty = py(pt.y);
-                const isHovP = hovPt === pt.id;
-                const r = isHovP ? 6.5 : 4.5;
-
-                return (
-                  <g key={pt.id} style={{ cursor: 'pointer' }}
-                    onClick={e => { e.stopPropagation(); onSelectPoint(pt, zone); }}
-                    onMouseEnter={() => setHovPt(pt.id)}
-                    onMouseLeave={() => setHovPt(null)}>
-                    <circle cx={ptx} cy={pty} r={r} fill={dotColor} stroke="white" strokeWidth="1.2"/>
-                    {isHovP && (() => {
-                      const hasUfc = pt.ufc !== null && pt.ufc !== undefined;
-                      const ufcTxt = hasUfc ? `${pt.ufc} UFC/cm²` : null;
-                      const randomTxt = isRandomPointId(pt.id) ? 'Aléatoire' : null;
-                      const extraLines = [ufcTxt, randomTxt].filter(Boolean);
-                      const w = Math.max(
-                        pt.label.length * 6.2 + 8,
-                        ...extraLines.map(t => t.length * 5.4 + 8)
-                      );
-                      const h = 14 + extraLines.length * 12;
-                      return (
-                        <g>
-                          <rect x={ptx + 7} y={pty - 9} width={w} height={h}
-                            fill="rgba(0,0,0,0.82)" rx="3"/>
-                          <text x={ptx + 11} y={pty + 1.5} fontSize="8.5" fill="white"
-                            fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
-                            {pt.label}
-                          </text>
-                          {extraLines.map((txt, i) => (
-                            <text key={txt} x={ptx + 11} y={pty + 13 + i * 11} fontSize="7.5"
-                              fill={txt === randomTxt ? '#60a5fa' : '#fbbf24'}
-                              fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
-                              {txt}
-                            </text>
-                          ))}
-                        </g>
-                      );
-                    })()}
-                  </g>
-                );
-              })}
             </g>
           );
         })}

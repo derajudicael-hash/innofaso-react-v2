@@ -90,6 +90,52 @@ function guessZoneFromDescription(description) {
 }
 
 // ─────────────────────────────────────────────
+// Résolution complète d'un point inconnu, par ordre de fiabilité — 1) salle
+// déjà cartographiée (2e segment de l'ID E.S.N), 2) mots-clés de sa
+// description. Factorisé pour être appelé à la fois par l'import d'un
+// bulletin (routes/labResults.js) et par l'enregistrement manuel d'un point
+// officiel par l'admin (routes/points.js) — même logique, même ordre.
+// ─────────────────────────────────────────────
+async function resolvePointZone(pointId, description) {
+  const parsed       = parsePointId(pointId);
+  const roomResolved  = parsed ? await resolveZoneForRoom(parsed.room) : null;
+  const guessed       = roomResolved ? null : guessZoneFromDescription(description);
+  return { parsed, zoneMapId: roomResolved || guessed, viaGuess: !roomResolved && !!guessed };
+}
+
+// Type de point (1-4, déterminant le seuil applicable) déduit du segment
+// Environnement de l'ID E.S.N quand il est connu, sinon du premier segment
+// numérique brut de l'ID (convention déjà utilisée par les points "aléatoires"
+// à 2 segments) — défaut "1" (seuil le plus strict) si vraiment rien à lire.
+function inferPointType(parsed, pointId) {
+  return parsed?.env ?? (String(pointId).match(/^(\d+)\./)?.[1] ?? "1");
+}
+
+// ─────────────────────────────────────────────
+// Met en file un identifiant qu'on n'a pas pu rattacher à une zone
+// automatiquement (salle inconnue de room_zone_map, ou ID ne suivant même
+// pas le format E.S.N) — jamais ignoré silencieusement. Si une entrée en
+// attente existe déjà pour ce même point_id, elle est mise à jour plutôt que
+// dupliquée (pending_points n'a pas de contrainte unique sur point_id).
+// ─────────────────────────────────────────────
+async function queuePending({ pointId, room, pointType, description, ufc, salmonella, cronobacter, importId, recordedAt }) {
+  const [[existing]] = await db.query("SELECT id FROM pending_points WHERE point_id = ?", [pointId]);
+  if (existing) {
+    await db.query(
+      `UPDATE pending_points SET room=?, point_type=?, description=?, ufc=?, salmonella_detected=?, cronobacter_detected=?, import_id=?, recorded_at=?
+       WHERE id = ?`,
+      [room, pointType, description, ufc, salmonella ?? null, cronobacter ?? null, importId ?? null, recordedAt ?? null, existing.id]
+    );
+  } else {
+    await db.query(
+      `INSERT INTO pending_points (point_id, room, point_type, description, ufc, salmonella_detected, cronobacter_detected, import_id, recorded_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [pointId, room, pointType, description, ufc, salmonella ?? null, cronobacter ?? null, importId ?? null, recordedAt ?? null]
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // Position d'un point nouvellement créé : la carte (géométrie des zones) ne
 // vit que côté frontend (factoryData.js), donc on place le nouveau point près
 // du centroïde de ses futurs voisins déjà connus dans la même zone, en
@@ -159,4 +205,7 @@ module.exports = {
   computeNewPointPosition,
   guessZoneFromDescription,
   placePendingPoint,
+  resolvePointZone,
+  inferPointType,
+  queuePending,
 };

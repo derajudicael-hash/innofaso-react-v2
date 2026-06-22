@@ -85,6 +85,9 @@ export const pointsAPI = {
 
   remove: (id) =>
     request(`/points/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  register: (data) =>
+    request("/points/register", { method: "POST", body: JSON.stringify(data) }),
 };
 
 // ═══════════════════════════════════════════

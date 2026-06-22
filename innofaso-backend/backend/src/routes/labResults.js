@@ -3,7 +3,7 @@ const db      = require("../db");
 const auth             = require("../middleware/auth");
 const { requireAdmin } = require("../middleware/auth");
 const { recomputeZone } = require("../lib/recomputeZone");
-const { parsePointId, resolveZoneForRoom, computeNewPointPosition, guessZoneFromDescription } = require("../lib/pointResolution");
+const { computeNewPointPosition, resolvePointZone, inferPointType, queuePending } = require("../lib/pointResolution");
 
 const router = express.Router();
 
@@ -63,30 +63,6 @@ function pickReportDate(results) {
     if (d) return d;
   }
   return new Date();
-}
-
-// ─────────────────────────────────────────────
-// Met en file un identifiant de bulletin qu'on n'a pas pu rattacher à une
-// zone automatiquement (salle inconnue de room_zone_map, ou ID ne suivant
-// même pas le format E.S.N) — jamais ignoré silencieusement. Si une entrée
-// en attente existe déjà pour ce même point_id (bulletin réimporté avant
-// résolution), elle est mise à jour plutôt que dupliquée.
-// ─────────────────────────────────────────────
-async function queuePending({ pointId, room, pointType, description, ufc, salmonella, cronobacter, importId, recordedAt }) {
-  const [[existing]] = await db.query("SELECT id FROM pending_points WHERE point_id = ?", [pointId]);
-  if (existing) {
-    await db.query(
-      `UPDATE pending_points SET room=?, point_type=?, description=?, ufc=?, salmonella_detected=?, cronobacter_detected=?, import_id=?, recorded_at=?
-       WHERE id = ?`,
-      [room, pointType, description, ufc, salmonella, cronobacter, importId, recordedAt, existing.id]
-    );
-  } else {
-    await db.query(
-      `INSERT INTO pending_points (point_id, room, point_type, description, ufc, salmonella_detected, cronobacter_detected, import_id, recorded_at)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
-      [pointId, room, pointType, description, ufc, salmonella, cronobacter, importId, recordedAt]
-    );
-  }
 }
 
 // ─────────────────────────────────────────────
@@ -155,18 +131,13 @@ router.post("/import", auth, async (req, res) => {
       );
 
       if (!row) {
-        // Point inconnu : on tente de le rattacher automatiquement, par ordre
-        // de fiabilité — 1) salle déjà cartographiée (2e segment de l'ID
-        // E.S.N), 2) mots-clés de sa description dans le bulletin (cf.
-        // guessZoneFromDescription) — et seulement si les deux échouent, on
-        // le met en attente pour que l'admin choisisse la zone.
-        const parsed = parsePointId(pointId);
-        const roomResolved = parsed ? await resolveZoneForRoom(parsed.room) : null;
-        const guessed      = roomResolved ? null : guessZoneFromDescription(entry.description);
-        const zoneMapId    = roomResolved || guessed;
+        // Point inconnu : résolution automatique par ordre de fiabilité —
+        // 1) salle déjà cartographiée, 2) mots-clés de sa description — et
+        // seulement si les deux échouent, mise en attente pour l'admin.
+        const { parsed, zoneMapId, viaGuess } = await resolvePointZone(pointId, entry.description);
 
         if (zoneMapId) {
-          const pointType = parsed?.env ?? (String(pointId).match(/^(\d+)\./)?.[1] ?? "1");
+          const pointType = inferPointType(parsed, pointId);
           const pos = await computeNewPointPosition(zoneMapId);
           await db.query(
             "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
@@ -179,7 +150,7 @@ router.post("/import", auth, async (req, res) => {
           // La salle vient d'être déduite par mots-clés : on l'enregistre
           // dans room_zone_map pour que les imports suivants la rattachent
           // directement (tier 1) sans repasser par la déduction par texte.
-          if (guessed && parsed?.room != null) {
+          if (viaGuess && parsed?.room != null) {
             await db.query(
               "INSERT INTO room_zone_map (room, zone_map_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE zone_map_id = VALUES(zone_map_id)",
               [parsed.room, zoneMapId]
