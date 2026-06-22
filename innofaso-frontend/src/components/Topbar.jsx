@@ -15,7 +15,6 @@ const PAGE_META = {
 
 const THEMES = [
   { id: "blanc",      label: "P", icon: "☀️", desc: "Professionnel" },
-  { id: "burkina",    label: "E", icon: "💼", desc: "Entreprise" },
   { id: "tbtrack",    label: "TB", icon: "🌊", desc: "TB Track" },
   { id: "industriel", label: "I", icon: "⚙️", desc: "Industriel" },
 ];

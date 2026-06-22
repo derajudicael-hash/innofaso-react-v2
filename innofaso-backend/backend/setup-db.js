@@ -63,16 +63,40 @@ async function setup() {
       console.log(`Base de données "${dbName}" déjà à jour.`);
     }
 
-    // Migration : table sampling_points (v4)
+    // Migration : table sampling_points (v4) — vide, alimentée par l'import des bulletins
     const [sp] = await conn.query("SHOW TABLES LIKE 'sampling_points'");
     if (sp.length === 0) {
-      console.log("Création de la table sampling_points...");
+      console.log("Création de la table sampling_points (vide — alimentée par l'import)...");
       const sql = fs.readFileSync(path.join(__dirname, "database.sql"), "utf8");
       const createSP = sql.match(/CREATE TABLE IF NOT EXISTS sampling_points[\s\S]*?;/)?.[0];
-      const insertSP = sql.match(/INSERT INTO sampling_points[\s\S]*?ON DUPLICATE KEY UPDATE[\s\S]*?;/)?.[0];
       if (createSP) await conn.query(createSP);
-      if (insertSP) await conn.query(insertSP);
-      console.log("Table sampling_points créée avec 77 points de prélèvement.");
+      console.log("Table sampling_points créée.");
+    }
+
+    // Migration : import_batches + point_history (historique par point)
+    const [ib] = await conn.query("SHOW TABLES LIKE 'import_batches'");
+    if (ib.length === 0) {
+      console.log("Création des tables import_batches et point_history...");
+      const sql = fs.readFileSync(path.join(__dirname, "database.sql"), "utf8");
+      const createIB = sql.match(/CREATE TABLE IF NOT EXISTS import_batches[\s\S]*?;/)?.[0];
+      const createPH = sql.match(/CREATE TABLE IF NOT EXISTS point_history[\s\S]*?;/)?.[0];
+      if (createIB) await conn.query(createIB);
+      if (createPH) await conn.query(createPH);
+      console.log("Tables import_batches et point_history créées.");
+    }
+
+    // Migration : room_zone_map + pending_points (résolution Salle→Zone)
+    const [rzm] = await conn.query("SHOW TABLES LIKE 'room_zone_map'");
+    if (rzm.length === 0) {
+      console.log("Création des tables room_zone_map et pending_points...");
+      const sql = fs.readFileSync(path.join(__dirname, "database.sql"), "utf8");
+      const createRZM = sql.match(/CREATE TABLE IF NOT EXISTS room_zone_map[\s\S]*?;/)?.[0];
+      const insertRZM = sql.match(/INSERT INTO room_zone_map[\s\S]*?ON DUPLICATE KEY UPDATE[\s\S]*?;/)?.[0];
+      const createPP  = sql.match(/CREATE TABLE IF NOT EXISTS pending_points[\s\S]*?;/)?.[0];
+      if (createRZM) await conn.query(createRZM);
+      if (insertRZM) await conn.query(insertRZM);
+      if (createPP)  await conn.query(createPP);
+      console.log("Tables room_zone_map (14 salles) et pending_points créées.");
     }
   }
 

@@ -4,6 +4,7 @@ import { usePointHistory, buildSeriesFromRaw } from "../hooks/usePointHistory";
 import { useAuth } from "../context/AuthContext";
 import { labResultsAPI } from "../services/api.js";
 import { exportHistoryToDocx } from "../utils/exportHistoryDocx.js";
+import { exportHistoryToXlsx } from "../utils/exportHistoryXlsx.js";
 import TrendChart from "../components/TrendChart";
 import Icon from "../components/Icon";
 
@@ -20,9 +21,9 @@ function fmtDateFull(d) {
   return `${String(dd.getDate()).padStart(2, "0")}/${String(dd.getMonth() + 1).padStart(2, "0")}/${dd.getFullYear()}`;
 }
 
-function StatBox({ label, value, unit, colorClass }) {
+function StatBox({ label, value, unit, colorClass, tooltip }) {
   return (
-    <div className="history-stat">
+    <div className="history-stat" title={tooltip}>
       <div className="history-stat-label">{label}</div>
       <div className={`history-stat-value${colorClass ? " " + colorClass : ""}`}>
         {value}
@@ -107,6 +108,18 @@ export default function HistoryPage() {
     }
   };
 
+  const handleDelete = async (importId) => {
+    if (!window.confirm(
+      "Supprimer complètement cet import ? Contrairement à l'annulation, cette action efface aussi l'historique réel de cet import — c'est comme si ce bulletin n'avait jamais été importé. Aucune restauration possible ensuite."
+    )) return;
+    try {
+      await labResultsAPI.deleteImport(importId);
+      await Promise.all([loadImports(), reloadHistory()]);
+    } catch (err) {
+      alert(err.message || "Erreur lors de la suppression de l'import.");
+    }
+  };
+
   // ── Bandeau de rétention 30 jours (Phase 3) ─────────────────
   const [retention, setRetention] = useState(null);
   useEffect(() => {
@@ -116,13 +129,14 @@ export default function HistoryPage() {
   // ── Exports ──────────────────────────────────────────────────
   const handleExportCSV = () => {
     if (!zone || !allPointsFlat.length) return;
-    const headers = ["Date", "Point", "UFC/cm²", "Seuil", "Statut", "Marge", "Salmonelles"];
+    const headers = ["Date", "Point", "UFC/cm²", "Seuil", "Statut", "Marge", "Salmonelles", "Cronobacter"];
     const rows = allPointsFlat.map((h) => {
       const st    = statusOf(h.ufc, h.seuil);
       const marge = h.seuil - h.ufc;
       return [
         fmtDateFull(h.date), h.pointId, h.ufc, h.seuil, STATUS_LABEL[st], (marge > 0 ? "+" : "") + marge,
         h.salmonella === true ? "Détectées" : h.salmonella === false ? "Absentes" : "—",
+        h.cronobacter === true ? "Détecté" : h.cronobacter === false ? "Absent" : "—",
       ];
     });
     const csv  = [headers, ...rows].map((r) => r.join(",")).join("\n");
@@ -136,21 +150,39 @@ export default function HistoryPage() {
   };
 
   const [exporting, setExporting] = useState(false);
+
+  const buildAllZonesData = async () => {
+    const zonesData = [];
+    for (const z of zones) {
+      const raw = await labResultsAPI.getPointHistory(z.mapId);
+      const { series: s, randomPoints: rp } = buildSeriesFromRaw(raw);
+      zonesData.push({ zone: { label: z.label }, series: s, randomPoints: rp, seuil: z.worstSeuil ?? z.seuil ?? 50 });
+    }
+    return zonesData;
+  };
+
   const handleExportWord = async () => {
     setExporting(true);
     try {
-      const zonesData = [];
-      for (const z of zones) {
-        const raw = await labResultsAPI.getPointHistory(z.mapId);
-        const { series: s, randomPoints: rp } = buildSeriesFromRaw(raw);
-        zonesData.push({ zone: { label: z.label }, series: s, randomPoints: rp, seuil: z.worstSeuil ?? z.seuil ?? 50 });
-      }
-      await exportHistoryToDocx(zonesData);
+      await exportHistoryToDocx(await buildAllZonesData());
     } catch (err) {
       console.error("Erreur export Word:", err);
       alert("Erreur lors de la génération du rapport Word.");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const [exportingXlsx, setExportingXlsx] = useState(false);
+  const handleExportExcel = async () => {
+    setExportingXlsx(true);
+    try {
+      await exportHistoryToXlsx(await buildAllZonesData());
+    } catch (err) {
+      console.error("Erreur export Excel:", err);
+      alert("Erreur lors de la génération du rapport Excel.");
+    } finally {
+      setExportingXlsx(false);
     }
   };
 
@@ -167,7 +199,7 @@ export default function HistoryPage() {
         <div>
           <div className="page-title">Historique des contrôles</div>
           <div className="page-sub">
-            Courbe réelle par point de prélèvement (entérobactéries), fenêtre glissante de 30 jours
+            Courbe réelle par point de prélèvement (entérobactéries), fenêtre glissante (cf. bandeau de rétention)
           </div>
         </div>
         <div className="history-export-group">
@@ -179,6 +211,10 @@ export default function HistoryPage() {
             <Icon name="download" size={14} strokeWidth={2} />
             {exporting ? "Export en cours…" : "Export Word (toutes zones)"}
           </button>
+          <button className="history-export-btn" onClick={handleExportExcel} disabled={exportingXlsx}>
+            <Icon name="download" size={14} strokeWidth={2} />
+            {exportingXlsx ? "Export en cours…" : "Export Excel (toutes zones)"}
+          </button>
         </div>
       </div>
 
@@ -186,7 +222,7 @@ export default function HistoryPage() {
         <div className={`history-retention-banner${retention.daysUntilDrop <= 2 ? " urgent" : ""}`}>
           <span>
             ⏳ {retention.daysUntilDrop <= 0
-              ? "Des relevés sortent dès maintenant de la fenêtre de 30 jours."
+              ? "Des relevés sortent dès maintenant de la fenêtre de rétention."
               : `Les relevés les plus anciens seront retirés de l'historique dans ${retention.daysUntilDrop} jour${retention.daysUntilDrop > 1 ? "s" : ""}.`}
             {" "}Exportez le rapport avant cette échéance.
           </span>
@@ -233,14 +269,22 @@ export default function HistoryPage() {
               value={stats?.avg ?? "—"}
               unit="UFC/cm²"
               colorClass={stats?.avg >= seuil ? "red" : stats?.avg >= seuil * 0.8 ? "orange" : ""}
+              tooltip="Moyenne de tous les relevés de cette zone sur la période affichée : donne le niveau de contamination habituel, sans qu'un seul pic isolé ne fausse la lecture."
             />
             <StatBox
               label="Maximum"
               value={stats?.max ?? "—"}
               unit="UFC/cm²"
               colorClass={stats?.max >= seuil ? "red" : ""}
+              tooltip="La pire valeur relevée sur la période : le moment où cette zone était la plus contaminée."
             />
-            <StatBox label="Minimum" value={stats?.min ?? "—"} unit="UFC/cm²" colorClass="" />
+            <StatBox
+              label="Minimum"
+              value={stats?.min ?? "—"}
+              unit="UFC/cm²"
+              colorClass=""
+              tooltip="La meilleure valeur relevée sur la période : le moment où cette zone était la plus propre."
+            />
             <StatBox
               label="Tendance"
               value={stats
@@ -248,6 +292,7 @@ export default function HistoryPage() {
                 : "—"}
               unit="UFC/cm²"
               colorClass={stats?.trend > 0 ? "red" : stats?.trend < 0 ? "green" : ""}
+              tooltip="Différence entre le dernier relevé et le premier relevé de la période. Un nombre positif (+) veut dire que la contamination augmente ; un nombre négatif (-) veut dire qu'elle diminue."
             />
           </div>
 
@@ -282,13 +327,15 @@ export default function HistoryPage() {
               </div>
               <div className="history-random-chips">
                 {randomPoints.map((rp) => {
-                  const last     = rp.series[rp.series.length - 1];
-                  const hasSalmo = rp.series.some((s) => s.salmonella === true);
+                  const last      = rp.series[rp.series.length - 1];
+                  const hasSalmo  = rp.series.some((s) => s.salmonella === true);
+                  const hasCrono  = rp.series.some((s) => s.cronobacter === true);
                   return (
-                    <span key={rp.pointId} className={`history-random-chip${hasSalmo ? " has-salmonella" : ""}`}>
+                    <span key={rp.pointId} className={`history-random-chip${(hasSalmo || hasCrono) ? " has-salmonella" : ""}`}>
                       <span className="hrc-id">{rp.pointId}</span>
                       {last ? `${last.ufc} UFC/cm² · ${fmtDateFull(last.date)}` : "—"}
                       {hasSalmo && " · ⚠ Salmonelles"}
+                      {hasCrono && " · ⚠ Cronobacter"}
                     </span>
                   );
                 })}
@@ -374,9 +421,13 @@ export default function HistoryPage() {
                   </td>
                   {isSuperadmin && (
                     <td>
-                      {imp.status !== "annule" && (
+                      {imp.status !== "annule" ? (
                         <button className="history-undo-btn" onClick={() => handleUndo(imp.id)}>
                           Annuler cet import
+                        </button>
+                      ) : (
+                        <button className="history-undo-btn history-delete-btn" onClick={() => handleDelete(imp.id)}>
+                          Supprimer complètement
                         </button>
                       )}
                     </td>

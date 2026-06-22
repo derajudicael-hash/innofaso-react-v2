@@ -39,26 +39,28 @@ const POINT_TYPE_DESC = {
 function ResultBlock({ result }) {
   const level = getLevel(result);
   const c = LEVEL_COLORS[level];
-  const isSalmo = result.parameter === 'salmonelles';
+  const isSalmo    = result.parameter === 'salmonelles';
+  const isCrono    = result.parameter === 'cronobacter';
+  const isPresence = isSalmo || isCrono;
   return (
     <div style={{ background: c + '12', border: `1px solid ${c}44`, borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          {isSalmo ? 'Salmonelles' : 'Entérobactéries'}
+          {isSalmo ? 'Salmonelles' : isCrono ? 'Cronobacter' : 'Entérobactéries'}
         </span>
         <LevelBadge level={level} />
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontSize: 28, fontWeight: 900, color: c, fontFamily: 'Inter, system-ui' }}>
-          {isSalmo
+          {isPresence
             ? (result.detected ? 'DÉTECTÉE' : 'Absente')
             : result.numericValue !== null
               ? (result.numericValue < 1 ? '<1' : result.numericValue.toFixed(1))
               : result.rawValue || '—'
           }
         </span>
-        {!isSalmo && <span style={{ fontSize: 13, color: '#94a3b8' }}>UFC/cm²</span>}
-        {!isSalmo && result.spec && (
+        {!isPresence && <span style={{ fontSize: 13, color: '#94a3b8' }}>UFC/cm²</span>}
+        {!isPresence && result.spec && (
           <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 4 }}>/ seuil &lt;{result.spec}</span>
         )}
       </div>
@@ -76,7 +78,7 @@ function ResultBlock({ result }) {
 
 export default function MapSidebar({ zone, point, results, backendZone, onClose, onSelectPoint, onBackToZone, points }) {
   if (!zone) return null;
-  const zonePoints = points ?? zone.points;
+  const zonePoints = points ?? [];
   const zoneLevel = getZoneLevel(results, zonePoints.map(p => p.id));
   const withData = zonePoints.filter(p => results.has(p.id)).length;
 
@@ -190,7 +192,7 @@ export default function MapSidebar({ zone, point, results, backendZone, onClose,
                     <div style={{ display: 'flex', gap: 3 }}>
                       {ptR.map(r => (
                         <span key={r.parameter} style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: LEVEL_COLORS[getLevel(r)] + '22', color: LEVEL_COLORS[getLevel(r)], fontWeight: 700 }}>
-                          {r.parameter === 'salmonelles' ? 'S' : 'EB'}
+                          {r.parameter === 'salmonelles' ? 'S' : r.parameter === 'cronobacter' ? 'C' : 'EB'}
                         </span>
                       ))}
                     </div>
@@ -215,10 +217,10 @@ export default function MapSidebar({ zone, point, results, backendZone, onClose,
             <div style={{ ...s.card, marginTop: 8 }}>
               <div style={s.label}>Spécifications réglementaires</div>
               <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.7 }}>
-                {point.pointType === '1' && 'EB < 10 UFC/cm² · Salmonelles : absence/cm²'}
-                {point.pointType === '2' && 'EB < 50 UFC/cm² · Salmonelles : absence/cm²'}
-                {point.pointType === '3' && 'EB < 100 UFC/cm² · Salmonelles : absence/cm²'}
-                {point.pointType === '4' && 'EB < 500 UFC/cm² · Salmonelles : absence/cm²'}
+                {point.pointType === '1' && 'EB < 10 UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²'}
+                {point.pointType === '2' && 'EB < 50 UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²'}
+                {point.pointType === '3' && 'EB < 100 UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²'}
+                {point.pointType === '4' && 'EB < 500 UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²'}
               </div>
             </div>
           </div>

@@ -21,7 +21,7 @@ export default function TopBar({ activeFile }) {
       {activeFile ? (
         <span style={{ fontSize: 12, color: '#475569' }}>
           Affichage : <strong style={{ color: '#0f172a' }}>
-            {activeFile.parameter === 'enterobacteries' ? 'Entérobactéries' : 'Salmonelles'}
+            {activeFile.parameter === 'enterobacteries' ? 'Entérobactéries' : activeFile.parameter === 'cronobacter' ? 'Cronobacter' : 'Salmonelles'}
           </strong>
           {activeFile.weekNum && ` · Semaine ${activeFile.weekNum}`}
           {activeFile.date && ` · ${activeFile.date}`}

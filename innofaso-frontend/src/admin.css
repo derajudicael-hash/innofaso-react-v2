@@ -834,6 +834,18 @@
   vertical-align: middle;
 }
 
+.pts-stale-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 99px;
+  padding: 1px 7px;
+  vertical-align: middle;
+}
+
 /* Valeur issue du bulletin actif (pas forcément encore synchronisée) */
 .pts-ufc-live-badge {
   display: inline-block;

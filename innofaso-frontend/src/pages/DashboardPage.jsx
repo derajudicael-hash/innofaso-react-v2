@@ -58,15 +58,15 @@ export const KPI_DETAILS = {
 export default function DashboardPage() {
   const { pointsByZone } = usePoints();
   const { activeResults } = usePersistedFiles();
-  const { computedZones, thresholds, loading, error } = useComputedZones(activeResults);
+  const { computedZones, loading, error } = useComputedZones(activeResults);
 
   const [selectedMapZone, setSelectedMapZone] = useState(null);
   const [selectedPoint,   setSelectedPoint]   = useState(null);
-  const [tab, setTab] = useState("7j");
   const [openModal, setOpenModal] = useState(null);
 
-  const critThresh = thresholds?.critical ?? 50;
-  const warnThresh = thresholds?.warning  ?? 40;
+  // Repli ultime si une zone n'a aucun seuil propre (cas normalement
+  // inatteignable : z.worstSeuil retombe déjà sur z.seuil, toujours défini).
+  const critThresh = 50;
 
   const kpiStats = useMemo(() => {
     const measured = computedZones.filter(z => z.hasData);
@@ -99,7 +99,7 @@ export default function DashboardPage() {
       : 0;
 
     return { critCount, warnCount, okCount, avgUfc, prevCritCount, prevWarnCount, prevOkCount, prevAvgUfc };
-  }, [computedZones, critThresh, warnThresh]);
+  }, [computedZones, critThresh]);
 
   if (loading) return (
     <div className="dash-loading">
@@ -194,7 +194,7 @@ export default function DashboardPage() {
                   <MapSidebar
                     zone={selectedMapZone}
                     point={selectedPoint}
-                    points={pointsByZone[selectedMapZone?.id] ?? selectedMapZone?.points ?? []}
+                    points={pointsByZone[selectedMapZone?.id] ?? []}
                     results={activeResults}
                     backendZone={activeBackendZone}
                     onClose={() => { setSelectedMapZone(null); setSelectedPoint(null); }}
@@ -204,12 +204,12 @@ export default function DashboardPage() {
                 </div>
                 {/* Graphique historique pour la zone sélectionnée */}
                 {chartZone && (
-                  <ChartSection zone={chartZone} tab={tab} setTab={setTab} />
+                  <ChartSection zone={chartZone} />
                 )}
               </>
             ) : (
               /* Pas de zone sélectionnée → graphique global première zone */
-              computedZones[0] && <ChartSection zone={computedZones[0]} tab={tab} setTab={setTab} />
+              computedZones[0] && <ChartSection zone={computedZones[0]} />
             )}
           </div>
         </div>

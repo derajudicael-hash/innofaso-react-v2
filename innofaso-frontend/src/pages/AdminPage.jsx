@@ -1,10 +1,11 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect, Fragment } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { usePoints } from "../context/PointsContext";
 import { usePersistedFiles } from "../map/usePersistedFiles.js";
 import { pointStatus, resultUfc } from "../hooks/useComputedZones";
 import { ZONES, isRandomPointId } from "../map/factoryData.js";
+import { pendingPointsAPI, correctiveActionsAPI, labResultsAPI, productionBatchesAPI } from "../services/api";
 import Icon from "../components/Icon";
 
 // ─── Shared UI atoms ──────────────────────────
@@ -182,93 +183,6 @@ function ZonesTab() {
 }
 
 // ─────────────────────────────────────────────
-// TAB 2 — SEUILS
-// ─────────────────────────────────────────────
-function SeuilsTab() {
-  const { thresholds, setThresholds } = useAdminData();
-  const [draft, setDraft]   = useState({ ...thresholds });
-  const [saved, flashSave]  = useFlash();
-  const [error, setError]   = useState("");
-
-  const save = async () => {
-    const c = Number(draft.critical);
-    const w = Number(draft.warning);
-    if (w >= c) { setError("Le seuil de surveillance doit être inférieur au seuil critique."); return; }
-    if (c <= 0 || w <= 0) { setError("Les seuils doivent être des valeurs positives."); return; }
-    try {
-      await setThresholds({ critical: c, warning: w });
-      setError("");
-      flashSave();
-    } catch (e) {
-      setError(e.message || "Erreur lors de l'enregistrement.");
-    }
-  };
-
-  return (
-    <div className="adm-tab-body">
-      <SectionTitle>Seuils de contamination</SectionTitle>
-      <Desc>
-        Les statuts appliquent <strong>NF EN ISO 18593</strong> : Type 1 = 10, Type 2 = 50,
-        Type 3 = 100, Type 4 = 500 UFC/cm² (surveillance à 80 %). Ces seuils sont conservés
-        comme référence complémentaire pour les graphiques historiques.
-      </Desc>
-
-      {error && <div className="adm-error-msg">{error}</div>}
-
-      <div className="adm-seuils-grid">
-        {/* Critical */}
-        <div className="adm-seuil-card seuil-red">
-          <div className="adm-seuil-dot" style={{ background: "#ef4444" }} />
-          <div className="adm-seuil-label">Seuil Critique</div>
-          <div className="adm-seuil-desc">Au-dessus : action immédiate requise</div>
-          <div className="adm-seuil-row">
-            <input
-              className="adm-seuil-input"
-              type="number" min="1"
-              value={draft.critical}
-              onChange={(e) => setDraft((p) => ({ ...p, critical: e.target.value }))}
-            />
-            <span className="adm-seuil-unit">UFC/cm²</span>
-          </div>
-        </div>
-
-        {/* Warning */}
-        <div className="adm-seuil-card seuil-orange">
-          <div className="adm-seuil-dot" style={{ background: "#f97316" }} />
-          <div className="adm-seuil-label">Seuil Surveillance</div>
-          <div className="adm-seuil-desc">Entre warning et critique : vigilance renforcée</div>
-          <div className="adm-seuil-row">
-            <input
-              className="adm-seuil-input"
-              type="number" min="1"
-              value={draft.warning}
-              onChange={(e) => setDraft((p) => ({ ...p, warning: e.target.value }))}
-            />
-            <span className="adm-seuil-unit">UFC/cm²</span>
-          </div>
-        </div>
-
-        {/* OK — readonly */}
-        <div className="adm-seuil-card seuil-green">
-          <div className="adm-seuil-dot" style={{ background: "#16a34a" }} />
-          <div className="adm-seuil-label">Zone Conforme</div>
-          <div className="adm-seuil-desc">En dessous du seuil surveillance</div>
-          <div className="adm-seuil-row">
-            <input className="adm-seuil-input adm-input-ro" type="text" value={`< ${draft.warning}`} readOnly />
-            <span className="adm-seuil-unit">UFC/cm²</span>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
-        <button className="btn-save" onClick={save}>Enregistrer les seuils</button>
-        <FlashMsg visible={saved} text="Seuils mis à jour" />
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
 // TAB 3 — POINTS DE PRELEVEMENT
 // ─────────────────────────────────────────────
 const VW = 1515, VH = 490;
@@ -282,6 +196,17 @@ const ZONE_COLORS = {
   laverie:  { fill: "#fef9c3", stroke: "#ca8a04" },
   external: { fill: "#f3f4f6", stroke: "#6b7280" },
 };
+
+// Au-delà de ce délai sans nouvelle mesure réelle, un point reste affiché
+// avec son ancien statut sans que rien ne signale qu'il n'est plus à jour —
+// aligné sur la fenêtre de rétention de l'historique (RETENTION_DAYS côté
+// backend) pour rester cohérent avec le reste de l'application.
+const STALE_DAYS = 30;
+
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+}
 
 const PT_TYPES = [
   { value: "1", label: "Type 1 — Surface de contact alimentaire", color: "#3b82f6" },
@@ -354,7 +279,7 @@ function MiniMap({ pointsByZone, highlightZone, crosshair, onPlaceClick, onPoint
       {ZONES.map(zone => {
         const col = ZONE_COLORS[zone.category] ?? ZONE_COLORS.grey;
         const isHL = highlightZone === zone.id;
-        const pts  = pointsByZone?.[zone.id] ?? zone.points;
+        const pts  = pointsByZone?.[zone.id] ?? [];
         return (
           <g key={zone.id}>
             <rect x={px(zone.x)} y={py(zone.y)} width={px(zone.width)} height={py(zone.height)}
@@ -414,6 +339,27 @@ function PointsTab() {
   const [error,   setError]   = useState("");
   const [saved,   flashSave]  = useFlash();
 
+  // Récidive : un point dont au moins 2 des 3 derniers relevés réels sont déjà
+  // non conformes (pas seulement le dernier) — signal de tendance en plus du
+  // statut instantané, sans jamais remplacer le calcul de couleur existant.
+  const [recidivePoints, setRecidivePoints] = useState(new Set());
+  useEffect(() => {
+    if (!selectedZoneId) return;
+    labResultsAPI.getPointHistory(selectedZoneId).then(history => {
+      const flagged = new Set();
+      for (const h of history) {
+        const last3 = (h.series || []).slice(-3);
+        const nonOk = last3.filter(e => {
+          if (e.salmonella) return true;
+          if (e.ufc === null || e.ufc === undefined) return false;
+          return pointStatus(e.ufc, h.pointType) !== "ok";
+        });
+        if (last3.length >= 2 && nonOk.length >= 2) flagged.add(h.pointId);
+      }
+      setRecidivePoints(flagged);
+    }).catch(() => setRecidivePoints(new Set()));
+  }, [selectedZoneId]);
+
   const [creating, setCreating]       = useState(false);
   const [createDraft, setCreateDraft] = useState({ type: "1", x: "", y: "", label: "", description: "" });
   const [createError, setCreateError] = useState("");
@@ -429,12 +375,14 @@ function PointsTab() {
     .map(pt => {
       const liveResults  = activeResults?.get(pt.id) ?? [];
       const liveUfc      = resultUfc(liveResults);
-      const salmoDetected = liveResults.some(r => r.parameter === "salmonelles" && r.detected === true);
+      const salmoDetected  = liveResults.some(r => r.parameter === "salmonelles"  && r.detected === true);
+      const cronoDetected  = liveResults.some(r => r.parameter === "cronobacter" && r.detected === true);
       return {
         ...pt,
         displayUfc: liveUfc ?? pt.ufc,
         hasLiveData: liveResults.length > 0,
         salmoDetected,
+        cronoDetected,
       };
     });
   const crosshair  = editing  && draft.x !== "" && draft.y !== ""       ? { x: draft.x, y: draft.y } : null;
@@ -578,7 +526,7 @@ function PointsTab() {
             <div className="pts-table-wrap">
               <table className="pts-table">
                 <thead>
-                  <tr><th>ID</th><th>Libellé</th><th>Type</th><th>X%</th><th>Y%</th><th>UFC/cm²</th><th></th></tr>
+                  <tr><th>ID</th><th>Libellé</th><th>Type</th><th>X%</th><th>Y%</th><th>UFC/cm²</th><th>Dernière mesure</th><th></th></tr>
                 </thead>
                 <tbody>
                   {zonePoints.map(pt => {
@@ -587,6 +535,9 @@ function PointsTab() {
                     const isMax     = pt.displayUfc !== null && pt.displayUfc === maxUfcInZone;
                     const isRandom  = isRandomPointId(pt.id);
                     const isConfirmingDel = confirmDeleteId === pt.id;
+                    const age       = daysSince(pt.lastMeasuredAt);
+                    const isStale   = age === null || age > STALE_DAYS;
+                    const isRecidive = recidivePoints.has(pt.id);
                     return (
                       <tr key={pt.id} className={isEditing ? "pts-row--editing" : ""}>
                         <td>
@@ -605,6 +556,17 @@ function PointsTab() {
                           {isMax && <span className="pts-ufc-badge" title="Valeur la plus élevée de la zone">▲</span>}
                           {pt.hasLiveData && <span className="pts-ufc-live-badge" title="Valeur issue du bulletin actuellement chargé">bulletin</span>}
                           {pt.salmoDetected && <span className="pts-salmo-badge" title="Salmonelles détectées dans le bulletin actuellement chargé">⚠ Salmonelles</span>}
+                          {pt.cronoDetected && <span className="pts-salmo-badge" title="Cronobacter (Enterobacter sakazakii) détecté dans le bulletin actuellement chargé">⚠ Cronobacter</span>}
+                          {isRecidive && <span className="pts-salmo-badge" title="Au moins 2 des 3 derniers relevés réels de ce point étaient déjà non conformes">↻ Récidive</span>}
+                        </td>
+                        <td className="pts-num">
+                          {age === null ? (
+                            <span className="pts-stale-badge" title="Aucune mesure réelle n'a jamais été importée pour ce point">Jamais testé</span>
+                          ) : isStale ? (
+                            <span className="pts-stale-badge" title={`Dernière mesure il y a ${age} jours — au-delà de la fenêtre de ${STALE_DAYS} jours`}>{age} j (à recontrôler)</span>
+                          ) : (
+                            <span style={{ color: "var(--txt3)" }}>{age === 0 ? "Aujourd'hui" : `il y a ${age} j`}</span>
+                          )}
                         </td>
                         <td className="pts-actions">
                           {isConfirmingDel ? (
@@ -727,24 +689,480 @@ function PointsTab() {
 }
 
 // ─────────────────────────────────────────────
+// TAB 4 — POINTS À PLACER
+// ─────────────────────────────────────────────
+function pendingStatus(row) {
+  if (row.salmonella_detected || row.cronobacter_detected) return "critical";
+  if (row.ufc === null || row.ufc === undefined) return null;
+  return pointStatus(Number(row.ufc), row.point_type || "1");
+}
+
+function PendingPointsTab({ onCountChange }) {
+  const { reload: reloadPoints } = usePoints();
+  const { reload: reloadAdminData } = useAdminData();
+  const [pending, setPending] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [zoneChoice, setZoneChoice] = useState({});
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    try {
+      const data = await pendingPointsAPI.getAll();
+      setPending(data);
+      onCountChange?.(data.length);
+    } catch (e) {
+      setError(e.message || "Erreur lors du chargement.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const place = async (id) => {
+    const zoneMapId = zoneChoice[id];
+    if (!zoneMapId) return;
+    setBusyId(id);
+    setError("");
+    try {
+      await pendingPointsAPI.resolve(id, zoneMapId);
+      await Promise.all([load(), reloadPoints(), reloadAdminData()]);
+    } catch (e) {
+      setError(e.message || "Erreur lors du placement du point.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const ignore = async (id) => {
+    setBusyId(id);
+    setError("");
+    try {
+      await pendingPointsAPI.dismiss(id);
+      await load();
+    } catch (e) {
+      setError(e.message || "Erreur lors de l'ignorance de l'entrée.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (loading) return <div className="adm-tab-body"><Desc>Chargement…</Desc></div>;
+
+  return (
+    <div className="adm-tab-body">
+      <SectionTitle>Points à placer ({pending.length})</SectionTitle>
+      <Desc>
+        Identifiants relevés dans un bulletin mais dont la salle n'a pas pu être rattachée
+        automatiquement à une zone du plan. Choisissez la zone à laquelle ce point appartient
+        réellement pour le créer sur la carte — ce choix est mémorisé pour les imports suivants
+        de la même salle. Ces résultats ne sont pris en compte dans aucune zone tant qu'ils
+        n'ont pas été placés.
+      </Desc>
+
+      {error && <p className="pts-error">{error}</p>}
+
+      {pending.length === 0 ? (
+        <p className="pts-empty">Aucun point en attente — tous les identifiants des bulletins importés ont été rattachés.</p>
+      ) : (
+        <div className="pts-table-wrap">
+          <table className="pts-table">
+            <thead>
+              <tr><th>ID</th><th>Salle</th><th>Description</th><th>Résultat</th><th>Zone</th><th></th></tr>
+            </thead>
+            <tbody>
+              {pending.map(row => {
+                const status = pendingStatus(row);
+                const busy = busyId === row.id;
+                return (
+                  <tr key={row.id}>
+                    <td><span className="pts-id">{row.point_id}</span></td>
+                    <td>{row.room !== null ? `Salle ${row.room}` : <span style={{ color: "var(--txt3)", fontStyle: "italic" }}>ID non reconnu</span>}</td>
+                    <td>{row.description || <span style={{ color: "var(--txt3)" }}>—</span>}</td>
+                    <td>
+                      {row.ufc !== null ? `${row.ufc} UFC/cm²` : <span style={{ color: "var(--txt3)" }}>—</span>}
+                      {row.salmonella_detected && <span className="pts-salmo-badge" title="Salmonelles détectées">⚠ Salmonelles</span>}
+                      {row.cronobacter_detected && <span className="pts-salmo-badge" title="Cronobacter détecté">⚠ Cronobacter</span>}
+                      {status && <StatusBadge status={status} />}
+                    </td>
+                    <td>
+                      <select
+                        className="adm-input"
+                        value={zoneChoice[row.id] || ""}
+                        onChange={(e) => setZoneChoice(c => ({ ...c, [row.id]: e.target.value }))}
+                      >
+                        <option value="">Choisir une zone…</option>
+                        {ZONES.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+                      </select>
+                    </td>
+                    <td className="pts-actions">
+                      <button className="btn-save" disabled={!zoneChoice[row.id] || busy} onClick={() => place(row.id)}>
+                        Placer
+                      </button>
+                      <button className="pts-btn-del" disabled={busy} onClick={() => ignore(row.id)} title="Ignorer cette entrée">
+                        <Icon name="trash" size={13} strokeWidth={2.5} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// TAB 5 — ACTIONS CORRECTIVES (CAPA minimal)
+// ─────────────────────────────────────────────
+function CorrectiveActionsTab({ onOpenCountChange }) {
+  const { points } = usePoints();
+  const [actions, setActions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+  const [openFormFor, setOpenFormFor] = useState(null); // point_id en cours d'ouverture
+  const [draft, setDraft]     = useState({ description: "", responsible: "", dueDate: "" });
+  const [busyId, setBusyId]   = useState(null);
+
+  const load = async () => {
+    try {
+      const data = await correctiveActionsAPI.getAll();
+      setActions(data);
+      onOpenCountChange?.(data.filter(a => a.status === "ouverte").length);
+    } catch (e) {
+      setError(e.message || "Erreur lors du chargement.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const openActions  = actions.filter(a => a.status === "ouverte");
+  const actionedIds  = new Set(openActions.map(a => a.point_id));
+
+  // Lots de production actifs à la date d'ouverture de chaque action — relie
+  // une non-conformité environnementale aux lots potentiellement concernés.
+  const [batchesByAction, setBatchesByAction] = useState({});
+  useEffect(() => {
+    openActions.forEach(a => {
+      if (batchesByAction[a.id] !== undefined) return;
+      const date = new Date(a.opened_at).toISOString().slice(0, 10);
+      productionBatchesAPI.getActiveOn(date)
+        .then(batches => setBatchesByAction(prev => ({ ...prev, [a.id]: batches })))
+        .catch(() => setBatchesByAction(prev => ({ ...prev, [a.id]: [] })));
+    });
+  }, [openActions]);
+
+  // Points actuellement non conformes (statut basé sur leur propre seuil de
+  // type) sans action corrective déjà ouverte.
+  const nonConforming = points
+    .filter(p => p.ufc !== null && p.ufc !== undefined)
+    .map(p => ({ ...p, status: pointStatus(p.ufc, p.pointType) }))
+    .filter(p => (p.status === "critical" || p.status === "warning") && !actionedIds.has(p.id));
+
+  const startForm = (pointId) => {
+    setOpenFormFor(pointId);
+    setDraft({ description: "", responsible: "", dueDate: "" });
+    setError("");
+  };
+
+  const submitForm = async () => {
+    if (!draft.description.trim() || !draft.responsible.trim()) {
+      setError("Description et responsable sont requis.");
+      return;
+    }
+    setBusyId(openFormFor);
+    setError("");
+    try {
+      await correctiveActionsAPI.create({
+        pointId: openFormFor,
+        description: draft.description.trim(),
+        responsible: draft.responsible.trim(),
+        dueDate: draft.dueDate || null,
+      });
+      setOpenFormFor(null);
+      await load();
+    } catch (e) {
+      setError(e.message || "Erreur lors de l'ouverture de l'action.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const close = async (id) => {
+    setBusyId(id);
+    setError("");
+    try {
+      await correctiveActionsAPI.close(id);
+      await load();
+    } catch (e) {
+      setError(e.message || "Erreur lors de la clôture de l'action.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (loading) return <div className="adm-tab-body"><Desc>Chargement…</Desc></div>;
+
+  return (
+    <div className="adm-tab-body">
+      <SectionTitle>Actions correctives ouvertes ({openActions.length})</SectionTitle>
+      <Desc>
+        Un dépassement de seuil doit aboutir à une décision tracée — pas seulement une couleur sur la
+        carte. Ouvrez une action avec un responsable et une échéance, et clôturez-la une fois le
+        recontrôle effectué.
+      </Desc>
+
+      {error && <p className="pts-error">{error}</p>}
+
+      {openActions.length === 0 ? (
+        <p className="pts-empty">Aucune action corrective ouverte.</p>
+      ) : (
+        <div className="pts-table-wrap">
+          <table className="pts-table">
+            <thead>
+              <tr><th>Point</th><th>Description</th><th>Responsable</th><th>Échéance</th><th>Ouverte</th><th>Lots actifs</th><th></th></tr>
+            </thead>
+            <tbody>
+              {openActions.map(a => {
+                const batches = batchesByAction[a.id];
+                return (
+                  <tr key={a.id}>
+                    <td><span className="pts-id">{a.point_id}</span></td>
+                    <td>{a.description}</td>
+                    <td>{a.responsible}</td>
+                    <td>{a.due_date ? new Date(a.due_date).toLocaleDateString('fr-FR') : <span style={{ color: "var(--txt3)" }}>—</span>}</td>
+                    <td>{new Date(a.opened_at).toLocaleDateString('fr-FR')} ({a.opened_by})</td>
+                    <td>
+                      {batches === undefined ? "…" : batches.length === 0
+                        ? <span style={{ color: "var(--txt3)", fontStyle: "italic" }}>Aucun lot ouvert</span>
+                        : batches.map(b => b.reference).join(", ")}
+                    </td>
+                    <td className="pts-actions">
+                      <button className="btn-save" disabled={busyId === a.id} onClick={() => close(a.id)}>Clôturer</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <SectionTitle>Points non conformes sans action ({nonConforming.length})</SectionTitle>
+      {nonConforming.length === 0 ? (
+        <p className="pts-empty">Tous les points non conformes ont déjà une action corrective ouverte.</p>
+      ) : (
+        <div className="pts-table-wrap">
+          <table className="pts-table">
+            <thead>
+              <tr><th>Point</th><th>Description</th><th>UFC/cm²</th><th>Statut</th><th></th></tr>
+            </thead>
+            <tbody>
+              {nonConforming.map(p => (
+                <Fragment key={p.id}>
+                  <tr>
+                    <td><span className="pts-id">{p.id}</span></td>
+                    <td>{p.description}</td>
+                    <td className="pts-num">{p.ufc}</td>
+                    <td><StatusBadge status={p.status} /></td>
+                    <td className="pts-actions">
+                      {openFormFor !== p.id && (
+                        <button className="btn-save" onClick={() => startForm(p.id)}>Ouvrir une action</button>
+                      )}
+                    </td>
+                  </tr>
+                  {openFormFor === p.id && (
+                    <tr key={`${p.id}-form`}>
+                      <td colSpan={5}>
+                        <div className="pts-form">
+                          <div className="adm-form-grid">
+                            <Field label="Description de l'action">
+                              <Inp value={draft.description} onChange={(v) => setDraft(d => ({ ...d, description: v }))} placeholder="ex : Nettoyage approfondi + désinfection" />
+                            </Field>
+                            <Field label="Responsable">
+                              <Inp value={draft.responsible} onChange={(v) => setDraft(d => ({ ...d, responsible: v }))} placeholder="ex : Sawadogo Marie" />
+                            </Field>
+                            <Field label="Échéance (optionnel)">
+                              <Inp type="date" value={draft.dueDate} onChange={(v) => setDraft(d => ({ ...d, dueDate: v }))} />
+                            </Field>
+                          </div>
+                          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                            <button className="btn-save" disabled={busyId === p.id} onClick={submitForm}>Enregistrer</button>
+                            <button className="adm-btn-cancel" onClick={() => setOpenFormFor(null)}>Annuler</button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// TAB 6 — LOTS DE PRODUCTION (traçabilité minimale)
+// ─────────────────────────────────────────────
+function ProductionBatchesTab() {
+  const [batches, setBatches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft]     = useState({ reference: "", dateStart: new Date().toISOString().slice(0, 10) });
+  const [busyId, setBusyId]   = useState(null);
+
+  const load = async () => {
+    try {
+      setBatches(await productionBatchesAPI.getAll());
+    } catch (e) {
+      setError(e.message || "Erreur lors du chargement.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const submit = async () => {
+    if (!draft.reference.trim() || !draft.dateStart) {
+      setError("Référence et date de début sont requises.");
+      return;
+    }
+    setError("");
+    try {
+      await productionBatchesAPI.create(draft);
+      setCreating(false);
+      setDraft({ reference: "", dateStart: new Date().toISOString().slice(0, 10) });
+      await load();
+    } catch (e) {
+      setError(e.message || "Erreur lors de l'ouverture du lot.");
+    }
+  };
+
+  const close = async (id) => {
+    setBusyId(id);
+    setError("");
+    try {
+      await productionBatchesAPI.close(id);
+      await load();
+    } catch (e) {
+      setError(e.message || "Erreur lors de la clôture du lot.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (loading) return <div className="adm-tab-body"><Desc>Chargement…</Desc></div>;
+
+  return (
+    <div className="adm-tab-body">
+      <div className="adm-toolbar">
+        <SectionTitle>Lots de production ({batches.length})</SectionTitle>
+      </div>
+      <Desc>
+        Un lot, c'est tout ce qui a été fabriqué pendant une période donnée — par exemple tout le
+        Plumpy'Nut produit le 20 juin 2026. Ouvrez un lot quand la production démarre, clôturez-le
+        quand elle s'arrête. À quoi ça sert : si un prélèvement détecte une contamination un jour
+        donné (ex. Salmonelle), il faut savoir quels lots étaient justement en cours de fabrication
+        ce jour-là pour décider lesquels bloquer ou rappeler — sans cette info, on serait obligé de
+        suspecter toute la production de l'usine au lieu d'un seul lot précis. C'est pour ça que
+        l'onglet "Actions correctives" affiche les lots actifs à la date de chaque non-conformité.
+      </Desc>
+
+      {error && <p className="pts-error">{error}</p>}
+
+      <button className="btn-add" onClick={() => setCreating(c => !c)}>
+        <Icon name="plus" size={13} strokeWidth={2.5} /> Nouveau lot
+      </button>
+
+      {creating && (
+        <div className="pts-form">
+          <div className="adm-form-grid">
+            <Field label="Référence du lot">
+              <Inp value={draft.reference} onChange={(v) => setDraft(d => ({ ...d, reference: v }))} placeholder="ex : LOT-2026-06-21-A" />
+            </Field>
+            <Field label="Date de début">
+              <Inp type="date" value={draft.dateStart} onChange={(v) => setDraft(d => ({ ...d, dateStart: v }))} />
+            </Field>
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button className="btn-save" onClick={submit}>Ouvrir le lot</button>
+            <button className="adm-btn-cancel" onClick={() => setCreating(false)}>Annuler</button>
+          </div>
+        </div>
+      )}
+
+      {batches.length === 0 ? (
+        <p className="pts-empty">Aucun lot enregistré.</p>
+      ) : (
+        <div className="pts-table-wrap">
+          <table className="pts-table">
+            <thead>
+              <tr><th>Référence</th><th>Début</th><th>Fin</th><th>Ouvert par</th><th></th></tr>
+            </thead>
+            <tbody>
+              {batches.map(b => (
+                <tr key={b.id}>
+                  <td><span className="pts-id">{b.reference}</span></td>
+                  <td>{new Date(b.date_start).toLocaleDateString('fr-FR')}</td>
+                  <td>{b.date_end ? new Date(b.date_end).toLocaleDateString('fr-FR') : <span className="pts-random-badge">En cours</span>}</td>
+                  <td>{b.created_by}</td>
+                  <td className="pts-actions">
+                    {!b.date_end && (
+                      <button className="btn-save" disabled={busyId === b.id} onClick={() => close(b.id)}>Clôturer</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // ADMIN PAGE — orchestrator
 // ─────────────────────────────────────────────
-const TABS = [
-  { id: "zones",  label: "Zones" },
-  { id: "points", label: "Points de prélèvement" },
-  { id: "seuils", label: "Seuils" },
-];
-
 export default function AdminPage() {
   const { user, logout } = useAuth();
   const [tab, setTab]    = useState("zones");
+  const [pendingCount, setPendingCount] = useState(0);
+  const [openActionsCount, setOpenActionsCount] = useState(0);
+
+  // Comptes initiaux indépendants de l'onglet actif, pour que les badges
+  // soient visibles même si l'admin n'a pas encore ouvert ces onglets.
+  useEffect(() => {
+    pendingPointsAPI.getAll().then(data => setPendingCount(data.length)).catch(() => {});
+    correctiveActionsAPI.getAll().then(data => setOpenActionsCount(data.filter(a => a.status === "ouverte").length)).catch(() => {});
+  }, []);
+
+  const TABS = [
+    { id: "zones",    label: "Zones" },
+    { id: "points",   label: "Points de prélèvement" },
+    { id: "pending",  label: `Points à placer${pendingCount > 0 ? ` (${pendingCount})` : ""}` },
+    { id: "actions",  label: `Actions correctives${openActionsCount > 0 ? ` (${openActionsCount})` : ""}` },
+    { id: "batches",  label: "Lots de production" },
+  ];
 
   const renderTab = () => {
     switch (tab) {
-      case "zones":  return <ZonesTab />;
-      case "points": return <PointsTab />;
-      case "seuils": return <SeuilsTab />;
-      default:       return <ZonesTab />;
+      case "zones":   return <ZonesTab />;
+      case "points":  return <PointsTab />;
+      case "pending": return <PendingPointsTab onCountChange={setPendingCount} />;
+      case "actions": return <CorrectiveActionsTab onOpenCountChange={setOpenActionsCount} />;
+      case "batches": return <ProductionBatchesTab />;
+      default:        return <ZonesTab />;
     }
   };
 

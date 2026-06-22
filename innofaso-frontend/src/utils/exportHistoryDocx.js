@@ -3,6 +3,7 @@ import {
   Table, TableRow, TableCell, WidthType, ImageRun,
 } from "docx";
 import { drawChart } from "../components/TrendChart.jsx";
+import { chunkSeries } from "./chunkSeries.js";
 
 const CHART_W = 680;
 const CHART_H = 280;
@@ -81,6 +82,7 @@ function randomPointsParagraphs(randomPoints) {
   return randomPoints.map(rp => {
     const last     = rp.series[rp.series.length - 1];
     const hasSalmo = rp.series.some(s => s.salmonella === true);
+    const hasCrono = rp.series.some(s => s.cronobacter === true);
     return new Paragraph({
       spacing: { after: 80 },
       children: [
@@ -88,6 +90,7 @@ function randomPointsParagraphs(randomPoints) {
         new TextRun({ text: `(${rp.label || "point aléatoire"}) — ` }),
         new TextRun({ text: last ? `${last.ufc} UFC/cm² le ${fmtDateFull(last.date)}` : "aucun relevé" }),
         ...(hasSalmo ? [new TextRun({ text: "   ⚠ Salmonelles détectées", bold: true, color: "BF3B2E" })] : []),
+        ...(hasCrono ? [new TextRun({ text: "   ⚠ Cronobacter détecté", bold: true, color: "7C3AED" })] : []),
       ],
     });
   });
@@ -101,7 +104,7 @@ export async function exportHistoryToDocx(zonesData) {
     new Paragraph({
       spacing: { after: 300 },
       children: [new TextRun({
-        text: `Exporté le ${fmtDateFull(today)} — fenêtre glissante de 30 jours (les relevés plus anciens sont automatiquement retirés de l'historique en direct).`,
+        text: `Exporté le ${fmtDateFull(today)} — fenêtre glissante de rétention (les relevés plus anciens sont automatiquement retirés de l'historique en direct ; voir le bandeau de rappel pour l'échéance exacte).`,
         italics: true, color: "666666",
       })],
     }),
@@ -129,14 +132,22 @@ export async function exportHistoryToDocx(zonesData) {
     }
 
     if (series.length > 0) {
-      const dataUrl = renderChartPng(series, seuil);
-      const bytes   = dataUrlToUint8Array(dataUrl);
-      children.push(new Paragraph({
-        spacing: { after: 150 },
-        children: [new ImageRun({ type: "png", data: bytes, transformation: { width: CHART_W, height: CHART_H } })],
-      }));
-      children.push(new Paragraph({ text: "Légende des points", heading: HeadingLevel.HEADING_3, spacing: { after: 80 } }));
-      children.push(legendTable(series));
+      // Au-delà de 5 courbes sur un même graphique, les couleurs se
+      // confondent : on découpe en plusieurs graphiques empilés de 5 max.
+      const chunks = chunkSeries(series, 5);
+      chunks.forEach((chunk, idx) => {
+        const dataUrl = renderChartPng(chunk, seuil);
+        const bytes   = dataUrlToUint8Array(dataUrl);
+        const rangeLabel = chunks.length > 1
+          ? `Points ${idx * 5 + 1}–${idx * 5 + chunk.length} sur ${series.length}`
+          : "Légende des points";
+        children.push(new Paragraph({ text: rangeLabel, heading: HeadingLevel.HEADING_3, spacing: { before: idx > 0 ? 200 : 0, after: 80 } }));
+        children.push(new Paragraph({
+          spacing: { after: 150 },
+          children: [new ImageRun({ type: "png", data: bytes, transformation: { width: CHART_W, height: CHART_H } })],
+        }));
+        children.push(legendTable(chunk));
+      });
     }
 
     children.push(new Paragraph({ text: "Points aléatoires", heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 80 } }));

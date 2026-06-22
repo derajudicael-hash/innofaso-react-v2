@@ -10,7 +10,7 @@ import FileSidebar from "../map/FileSidebar.jsx";
 import TopBar from "../map/UploadPanel.jsx";
 
 export default function CartoPage() {
-  const { pointsByZone, reload: reloadPoints } = usePoints();
+  const { pointsByZone, reload: reloadPoints, error: pointsError } = usePoints();
   const { reload: reloadAdminData } = useAdminData();
   const { activeResults, addFile, removeFile, clearAll, fileEntries, activeFileId, setActiveFileId, hydrated } = usePersistedFiles();
   const { computedZones } = useComputedZones(activeResults);
@@ -84,12 +84,15 @@ export default function CartoPage() {
       try {
         const { labResultsAPI } = await import('../services/api.js');
         const sync = await labResultsAPI.import(results, file.name);
-        if (sync?.unmatchedIds?.length) {
+        if (sync?.pending?.length) {
+          const n = sync.pending.length;
+          const createdNote = sync.created?.length
+            ? ` (${sync.created.length} autre${sync.created.length > 1 ? "s" : ""} créé${sync.created.length > 1 ? "s" : ""} automatiquement sur la carte)`
+            : "";
           setImportWarning(
-            `${sync.unmatchedIds.length} identifiant${sync.unmatchedIds.length > 1 ? "s" : ""} du bulletin ` +
-            `n'existe${sync.unmatchedIds.length > 1 ? "nt" : ""} pas dans le catalogue des points : ` +
-            `${sync.unmatchedIds.join(", ")}. Créez-le${sync.unmatchedIds.length > 1 ? "s" : ""} comme point ` +
-            `aléatoire dans Administration → Points de prélèvement pour qu'il${sync.unmatchedIds.length > 1 ? "s" : ""} apparaisse${sync.unmatchedIds.length > 1 ? "nt" : ""} sur la carte.`
+            `${n} identifiant${n > 1 ? "s" : ""} (${sync.pending.join(", ")}) n'${n > 1 ? "ont" : "a"} pas pu être ` +
+            `rattaché${n > 1 ? "s" : ""} automatiquement à une zone${createdNote} — à placer dans ` +
+            `Administration → Points à placer pour qu'il${n > 1 ? "s" : ""} apparaisse${n > 1 ? "nt" : ""} sur la carte.`
           );
         }
         await Promise.all([reloadPoints(), reloadAdminData()]);
@@ -111,6 +114,7 @@ export default function CartoPage() {
     const { results } = pendingImport;
     const ebCount    = results.filter(r => r.parameter === 'enterobacteries').length;
     const salmoCount = results.filter(r => r.parameter === 'salmonelles').length;
+    const cronoCount = results.filter(r => r.parameter === 'cronobacter').length;
     const zoneCounts = {};
     const unmatched   = [];
     results.forEach(r => {
@@ -122,7 +126,7 @@ export default function CartoPage() {
     return {
       fileName:       pendingImport.file.name,
       total:          results.length,
-      ebCount, salmoCount,
+      ebCount, salmoCount, cronoCount,
       zones:          Object.entries(zoneCounts).sort((a, b) => b[1] - a[1]),
       unmatchedCount: unmatched.length,
     };
@@ -131,6 +135,14 @@ export default function CartoPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', fontFamily: 'Inter, Arial, sans-serif' }}>
       <TopBar activeFile={activeFile} />
+      {pointsError && (
+        <div style={{
+          background: '#fee2e2', borderBottom: '1px solid #fca5a5', color: '#991b1b',
+          padding: '8px 16px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span>⛔ Connexion au serveur perdue — les points de prélèvement ne peuvent pas être chargés. Vérifiez que le backend tourne, puis rechargez la page.</span>
+        </div>
+      )}
       {importWarning && (
         <div style={{
           background: '#fff3cd', borderBottom: '1px solid #ffe08a', color: '#7a5b00',
@@ -159,6 +171,7 @@ export default function CartoPage() {
                 <span><b>{importSummary.total}</b> résultat{importSummary.total > 1 ? 's' : ''}</span>
                 {importSummary.ebCount > 0 && <span><b>{importSummary.ebCount}</b> entérobactéries</span>}
                 {importSummary.salmoCount > 0 && <span><b>{importSummary.salmoCount}</b> salmonelles</span>}
+                {importSummary.cronoCount > 0 && <span><b>{importSummary.cronoCount}</b> Cronobacter</span>}
               </div>
               {importSummary.zones.length > 0 && (
                 <div>
@@ -172,7 +185,7 @@ export default function CartoPage() {
               )}
               {importSummary.unmatchedCount > 0 && (
                 <div style={{ marginTop: 10, fontSize: 11.5, color: '#7a5b00', background: '#fff3cd', border: '1px solid #ffe08a', borderRadius: 6, padding: '6px 8px' }}>
-                  ⚠️ {importSummary.unmatchedCount} identifiant{importSummary.unmatchedCount > 1 ? 's' : ''} inconnu{importSummary.unmatchedCount > 1 ? 's' : ''} du catalogue de points — sera signalé après l'import.
+                  ℹ️ {importSummary.unmatchedCount} identifiant{importSummary.unmatchedCount > 1 ? 's' : ''} nouveau{importSummary.unmatchedCount > 1 ? 'x' : ''} (hors catalogue actuel) — sera{importSummary.unmatchedCount > 1 ? 'nt' : ''} créé{importSummary.unmatchedCount > 1 ? 's' : ''} automatiquement, ou mis en attente de placement si la salle n'est pas reconnue.
                 </div>
               )}
             </div>
@@ -219,7 +232,7 @@ export default function CartoPage() {
           <MapSidebar
             zone={selectedZone}
             point={selectedPoint}
-            points={pointsByZone[selectedZone?.id] ?? selectedZone?.points ?? []}
+            points={pointsByZone[selectedZone?.id] ?? []}
             results={activeResults}
             backendZone={activeBackendZone}
             onClose={() => { setSelectedZone(null); setSelectedPoint(null); }}

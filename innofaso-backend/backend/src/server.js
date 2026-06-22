@@ -26,121 +26,6 @@ app.use(express.json());
 // ── Init DB tables + seed (idempotent) ────────
 const db = require("./db");
 
-// Valeurs UFC de démonstration (relevés fictifs pour illustration)
-// Format: [id, zone_map_id, label, x, y, point_type, description, ufc]
-// Seuils réglementaires : type1=10, type2=50, type3=100, type4=500 UFC/cm²
-const DEFAULT_POINTS = [
-  // ── Stockage PF (type 4, seuil 500) ─────────────────────────
-  // 4.12.1 = valeur UFC la plus élevée en nombre absolu (premier point du plan)
-  { id: '4.12.1',   zone_map_id: 'stockage_pf',        label: '4.12.1',   x: 11,   y: 55,   point_type: '4', description: 'Sol Stockage Tampon PF',                            ufc: 350  },
-
-  // ── Conditionnement (type 1 seuil=10 · type 2 seuil=50 · type 3 seuil=100) ──
-  // Zone CRITIQUE : 1.5.1 dépasse son seuil (13/10 = 130 %)
-  { id: '1.5.1',    zone_map_id: 'conditionnement',     label: '1.5.1',    x: 26.5, y: 17.5, point_type: '1', description: 'Surface interne trémie conditionnement 1',            ufc: 13   },
-  { id: '1.5.2',    zone_map_id: 'conditionnement',     label: '1.5.2',    x: 26.5, y: 24.5, point_type: '1', description: 'Surface interne trémie conditionnement 2',            ufc: 8.5  },
-  { id: '1.5.3',    zone_map_id: 'conditionnement',     label: '1.5.3',    x: 26.5, y: 31.5, point_type: '1', description: 'Surface interne trémie conditionnement 4',            ufc: 4    },
-  { id: '1.5.4',    zone_map_id: 'conditionnement',     label: '1.5.4',    x: 26.5, y: 38.5, point_type: '1', description: 'Col formateur conditionneuse 1',                      ufc: 6    },
-  { id: '1.5.6',    zone_map_id: 'conditionnement',     label: '1.5.6',    x: 26.5, y: 45.5, point_type: '1', description: 'Col formateur conditionneuse L4A',                    ufc: 7    },
-  { id: '1.5.9',    zone_map_id: 'conditionnement',     label: '1.5.9',    x: 26.5, y: 52.5, point_type: '1', description: 'Canne de dosage des ensacheuses 2',                   ufc: null },
-  { id: '1.5.11',   zone_map_id: 'conditionnement',     label: '1.5.11',   x: 26.5, y: 59.5, point_type: '1', description: 'Canne de dosage des ensacheuses L4B',                 ufc: null },
-  { id: '1.5.3r',   zone_map_id: 'conditionnement',     label: '1.5.3',    x: 36.5, y: 17.5, point_type: '1', description: 'Surface interne trémie conditionnement 4 (R)',         ufc: 5    },
-  { id: '1.5.6r',   zone_map_id: 'conditionnement',     label: '1.5.6',    x: 36.5, y: 24.5, point_type: '1', description: 'Col formateur L4A (R)',                               ufc: 3    },
-  { id: '1.5.7',    zone_map_id: 'conditionnement',     label: '1.5.7',    x: 36.5, y: 31.5, point_type: '1', description: 'Col formateur conditionneuse L4B',                    ufc: 9    },
-  { id: '1.5.8',    zone_map_id: 'conditionnement',     label: '1.5.8',    x: 36.5, y: 38.5, point_type: '1', description: 'Canne dosage ensacheuses 1',                          ufc: 4    },
-  { id: '1.5.5',    zone_map_id: 'conditionnement',     label: '1.5.5',    x: 36.5, y: 45.5, point_type: '1', description: 'Col formateur de la conditionneuse 2',               ufc: null },
-  { id: '1.5.10',   zone_map_id: 'conditionnement',     label: '1.5.10',   x: 36.5, y: 52.5, point_type: '1', description: 'Canne de dosage des ensacheuses L4A',                 ufc: null },
-  { id: '2.5.1',    zone_map_id: 'conditionnement',     label: '2.5.1',    x: 30.5, y: 57,   point_type: '2', description: 'Scotcheuse automatique',                              ufc: 22   },
-  { id: '2.5.2',    zone_map_id: 'conditionnement',     label: '2.5.2',    x: 36.5, y: 59.5, point_type: '2', description: 'Armoire de commande en zone de production',           ufc: null },
-  { id: '2.5.3',    zone_map_id: 'conditionnement',     label: '2.5.3',    x: 26.5, y: 66.5, point_type: '2', description: 'Tapis du convoyeur L1',                               ufc: null },
-  { id: '3.5.1',    zone_map_id: 'conditionnement',     label: '3.5.1',    x: 30.5, y: 70,   point_type: '3', description: 'Tapis convoyeur conditionnement',                     ufc: 45   },
-  { id: '3.5.2',    zone_map_id: 'conditionnement',     label: '3.5.2',    x: 36.5, y: 66.5, point_type: '3', description: 'Bureau chef de quart',                                ufc: null },
-  { id: '3.5.3',    zone_map_id: 'conditionnement',     label: '3.5.3',    x: 30.5, y: 74,   point_type: '3', description: 'Interrupteur zone production conditionnement',       ufc: null },
-
-  // ── Mélange (type 1 seuil=10 · type 2 seuil=50 · type 3 seuil=100) ────────
-  { id: '1.2.1',    zone_map_id: 'melange',             label: '1.2.1',    x: 45.5, y: 22,   point_type: '1', description: 'Surface internes trémie incorporation mélange',       ufc: 7    },
-  { id: '1.2.2',    zone_map_id: 'melange',             label: '1.2.2',    x: 52.0, y: 22,   point_type: '1', description: 'Ouverture vanne filtre mélange poudre',               ufc: 6    },
-  { id: '1.2.3',    zone_map_id: 'melange',             label: '1.2.3',    x: 52.0, y: 27.5, point_type: '1', description: "Mains d'un opérateur mélange poudre",                 ufc: null },
-  { id: '2.2.1',    zone_map_id: 'melange',             label: '2.2.1',    x: 45.5, y: 33,   point_type: '2', description: 'Extérieur du mélangeur poudre',                       ufc: 35   },
-  { id: '2.2.2',    zone_map_id: 'melange',             label: '2.2.2',    x: 45.5, y: 40,   point_type: '2', description: 'Grille de soufflage CTA mélange poudre',              ufc: null },
-  { id: '2.2.3',    zone_map_id: 'melange',             label: '2.2.3',    x: 52.0, y: 47.5, point_type: '2', description: 'Grille de reprise CTA mélange poudre',                ufc: null },
-  { id: '2.2.4',    zone_map_id: 'melange',             label: '2.2.4',    x: 45.5, y: 47.5, point_type: '2', description: 'Distributeur de désinfectant pour main (Entrée Salle mélange)', ufc: null },
-  { id: '3.2.2',    zone_map_id: 'melange',             label: '3.2.2',    x: 52.0, y: 40,   point_type: '3', description: 'Mur zone de mélange poudre',                          ufc: 62   },
-  { id: '3.2.1',    zone_map_id: 'melange',             label: '3.2.1',    x: 46.5, y: 56,   point_type: '3', description: 'Sol zone de mélange poudre',                          ufc: 78   },
-  { id: '3.2.3',    zone_map_id: 'melange',             label: '3.2.3',    x: 52.0, y: 56,   point_type: '3', description: 'Outils de nettoyage en zone de mélange poudre',       ufc: null },
-  { id: '3.2.4',    zone_map_id: 'melange',             label: '3.2.4',    x: 45.5, y: 62,   point_type: '3', description: 'Uniforme des opérateurs mélange poudre',              ufc: null },
-  { id: '3.2.5',    zone_map_id: 'melange',             label: '3.2.5',    x: 52.0, y: 62,   point_type: '3', description: 'Chaussures des opérateurs mélange poudre',            ufc: null },
-
-  // ── Pré-Mélange (type 1 seuil=10 · type 2 seuil=50 · type 3 seuil=100) ────
-  // Zone SURVEILLANCE : 1.4.1 à 85 % de son seuil
-  { id: '1.4.1',    zone_map_id: 'premix',              label: '1.4.1',    x: 59.5, y: 10.5, point_type: '1', description: 'Paroi interne cuve tampon prémélange',                ufc: 8.5  },
-  { id: '1.4.2',    zone_map_id: 'premix',              label: '1.4.2',    x: 66.0, y: 10.5, point_type: '1', description: 'Surface internes trémie incorporation prémélange',    ufc: 6    },
-  { id: '2.4.1',    zone_map_id: 'premix',              label: '2.4.1',    x: 59.5, y: 28,   point_type: '2', description: 'Extérieur du pré mélangeur',                          ufc: 43   },
-  { id: '3.4.1',    zone_map_id: 'premix',              label: '3.4.1',    x: 66.0, y: 40,   point_type: '3', description: 'Clé à ergot des broyeurs prémélange',                 ufc: null },
-  { id: '3.4.2',    zone_map_id: 'premix',              label: '3.4.2',    x: 67.0, y: 28,   point_type: '3', description: 'Escabot en pré mélange',                              ufc: 55   },
-
-  // ── Pesage poudres (type 1 seuil=10 · type 2 seuil=50 · type 3 seuil=100) ─
-  // Zone CRITIQUE : 1.1.1 dépasse son seuil (11/10 = 110 %)
-  { id: '1.1.1',    zone_map_id: 'pesage',              label: '1.1.1',    x: 58.5, y: 56,   point_type: '1', description: 'Couteaux salle de pesée mélange',                     ufc: 11   },
-  { id: '2.1.2',    zone_map_id: 'pesage',              label: '2.1.2',    x: 65.0, y: 56,   point_type: '2', description: 'Plateau balance pesée mélange',                       ufc: 28   },
-  { id: '2.1.1',    zone_map_id: 'pesage',              label: '2.1.1',    x: 58.5, y: 65.5, point_type: '2', description: 'Bras aspirante dust-collector',                       ufc: 31   },
-  { id: '2.1.3',    zone_map_id: 'pesage',              label: '2.1.3',    x: 61.5, y: 60.5, point_type: '2', description: 'Manche (corde) porte rapide pesée mélange',           ufc: null },
-  { id: '2.1.4',    zone_map_id: 'pesage',              label: '2.1.4',    x: 65.0, y: 65.5, point_type: '2', description: 'Coffret porte rapide pesée mélange',                  ufc: 19   },
-  { id: '3.1.1',    zone_map_id: 'pesage',              label: '3.1.1',    x: 61.5, y: 72.5, point_type: '3', description: 'Palette plastique pesée mélange (lait)',               ufc: 48   },
-
-  // ── Huile et pesage S+A+H (type 1 seuil=10 · type 2 seuil=50 · type 3 seuil=100) ──
-  { id: '1.3.1',    zone_map_id: 'huile',               label: '1.3.1',    x: 74.5, y: 18,   point_type: '1', description: 'Seau en pesée prémélange',                            ufc: 5    },
-  { id: '2.3.1',    zone_map_id: 'huile',               label: '2.3.1',    x: 74.5, y: 30,   point_type: '2', description: 'Plateau balance pesée pré mélange',                   ufc: 24   },
-  { id: '2.3.1b',   zone_map_id: 'huile',               label: '2.3.1',    x: 81.0, y: 30,   point_type: '2', description: 'Plateau balance pesée pré mélange (bis)',              ufc: 17   },
-  { id: '3.3.1',    zone_map_id: 'huile',               label: '3.3.1',    x: 81.0, y: 42,   point_type: '3', description: 'Palette plastique pesée prémélange',                  ufc: 38   },
-  { id: '3.3.2',    zone_map_id: 'huile',               label: '3.3.2',    x: 74.5, y: 42,   point_type: '3', description: 'Support des outils de nettoyage de pesée prémélange', ufc: null },
-
-  // ── SAS poudres (type 3 seuil=100) ──────────────────────────────────────────
-  // Zone SURVEILLANCE : 3.6.1 à 92 % de son seuil
-  { id: '3.6.2',    zone_map_id: 'sas_poudres',         label: '3.6.2',    x: 74.5, y: 63,   point_type: '3', description: 'Mur SAS mélange poudre',                              ufc: 84   },
-  { id: '3.6.1',    zone_map_id: 'sas_poudres',         label: '3.6.1',    x: 80.5, y: 70,   point_type: '3', description: 'Sol SAS mélange poudre',                              ufc: 92   },
-
-  // ── Matières Premières (type 4, seuil 500) ──────────────────────────────────
-  { id: '4.11.2',   zone_map_id: 'matieres_premieres',  label: '4.11.2',   x: 94,   y: 22,   point_type: '4', description: 'Zone de prélèvement matières premières (Hôte)',        ufc: 180  },
-  { id: '4.11.1',   zone_map_id: 'matieres_premieres',  label: '4.11.1',   x: 94,   y: 57,   point_type: '4', description: 'Sol Stockage Tampon MP',                               ufc: 210  },
-
-  // ── Laverie + buanderie (type 4, seuil 500) ─────────────────────────────────
-  { id: '4.13.3',   zone_map_id: 'laverie',             label: '4.13.3',   x: 25.5, y: 82,   point_type: '4', description: 'Zone de séchage matériel propre',                     ufc: 145  },
-  { id: '4.13.1',   zone_map_id: 'laverie',             label: '4.13.1',   x: 31.5, y: 90,   point_type: '4', description: 'Sol laverie',                                          ufc: 285  },
-  { id: '4.13.2',   zone_map_id: 'laverie',             label: '4.13.2',   x: 38.5, y: 86,   point_type: '4', description: 'Bassin laverie',                                       ufc: 320  },
-
-  // ── Vestiaire Laverie (type 4, seuil 500) ───────────────────────────────────
-  { id: '4.18.1',   zone_map_id: 'vestiaire_laverie',   label: '4.18.1',   x: 5.5,  y: 82,   point_type: '4', description: 'Poigné vestiaire laverie',                             ufc: 95   },
-  { id: '4.18.2',   zone_map_id: 'vestiaire_laverie',   label: '4.18.2',   x: 5.5,  y: 90,   point_type: '4', description: 'Sol vestiaire laverie',                                ufc: 165  },
-  { id: '4.18.3',   zone_map_id: 'vestiaire_laverie',   label: '4.18.3',   x: 13.5, y: 86,   point_type: '4', description: 'Distributeur vestiaire laverie',                       ufc: 120  },
-  { id: '4.18.4',   zone_map_id: 'vestiaire_laverie',   label: '4.18.4',   x: 13.5, y: 94,   point_type: '4', description: 'Chariot laverie',                                      ufc: null },
-  { id: '4.18.5',   zone_map_id: 'vestiaire_laverie',   label: '4.18.5',   x: 5.5,  y: 96,   point_type: '4', description: 'Poudre du dust collector',                             ufc: null },
-
-  // ── Vestiaires H (type 4, seuil 500) ────────────────────────────────────────
-  { id: '4.14.1',   zone_map_id: 'vestiaires_h',        label: '4.14.1',   x: 45.5, y: 82.5, point_type: '4', description: 'Banc homme',                                           ufc: 78   },
-  { id: '4.14.2',   zone_map_id: 'vestiaires_h',        label: '4.14.2',   x: 51.5, y: 82.5, point_type: '4', description: 'Poignet vestiaire homme',                              ufc: 110  },
-  { id: '4.14.2b',  zone_map_id: 'vestiaires_h',        label: '4.14.2',   x: 48.5, y: 92,   point_type: '4', description: 'Poignet vestiaire homme (bis)',                        ufc: 130  },
-  { id: '4.14.3',   zone_map_id: 'vestiaires_h',        label: '4.14.3',   x: 45.5, y: 92,   point_type: '4', description: 'Sols de vestiaire homme',                              ufc: null },
-  { id: '4.14.4',   zone_map_id: 'vestiaires_h',        label: '4.14.4',   x: 51.5, y: 96,   point_type: '4', description: 'Distributeur désinfectant homme',                      ufc: null },
-
-  // ── Vestiaires Visiteur (type 4, seuil 500) ─────────────────────────────────
-  { id: '4.16.3',   zone_map_id: 'vestiaires_visiteur', label: '4.16.3',   x: 58.5, y: 82.5, point_type: '4', description: 'Sols de vestiaire visiteur',                           ufc: 220  },
-  { id: '4.16.1',   zone_map_id: 'vestiaires_visiteur', label: '4.16.1',   x: 65.0, y: 82.5, point_type: '4', description: 'Banc visiteur',                                        ufc: 195  },
-  { id: '4.16.3b',  zone_map_id: 'vestiaires_visiteur', label: '4.16.3',   x: 61.5, y: 92,   point_type: '4', description: 'Sols vestiaire visiteur (bis)',                        ufc: 240  },
-  { id: '4.16.2',   zone_map_id: 'vestiaires_visiteur', label: '4.16.2',   x: 65.0, y: 92,   point_type: '4', description: 'Poignet vestiaire visiteur',                            ufc: null },
-  { id: '4.16.4',   zone_map_id: 'vestiaires_visiteur', label: '4.16.4',   x: 58.5, y: 96,   point_type: '4', description: 'Distributeur désinfectant visiteur',                   ufc: null },
-
-  // ── Vestiaires F (type 4, seuil 500) ────────────────────────────────────────
-  { id: '4.15.1',   zone_map_id: 'vestiaires_f',        label: '4.15.1',   x: 71.5, y: 82.5, point_type: '4', description: 'Banc femme',                                           ufc: 88   },
-  { id: '4.15.2',   zone_map_id: 'vestiaires_f',        label: '4.15.2',   x: 78.0, y: 82.5, point_type: '4', description: 'Poignet vestiaire femme',                              ufc: 95   },
-  { id: '4.15.3',   zone_map_id: 'vestiaires_f',        label: '4.15.3',   x: 74.5, y: 92,   point_type: '4', description: 'Sols de vestiaire femme',                              ufc: 105  },
-  { id: '4.15.4',   zone_map_id: 'vestiaires_f',        label: '4.15.4',   x: 78.0, y: 92,   point_type: '4', description: 'Distributeur désinfectant femme',                      ufc: null },
-
-  // ── Labo Microbiologie (type 4, seuil 500) ──────────────────────────────────
-  { id: '4.17.1',   zone_map_id: 'labo_microbiologie',  label: '4.17.1',   x: 85.0, y: 84,   point_type: '4', description: 'Paillasse labo microbiologie',                         ufc: null },
-  { id: '4.17.2',   zone_map_id: 'labo_microbiologie',  label: '4.17.2',   x: 87.5, y: 84,   point_type: '4', description: 'Equipement labo microbiologie',                        ufc: null },
-  { id: '4.17.3',   zone_map_id: 'labo_microbiologie',  label: '4.17.3',   x: 86.3, y: 93,   point_type: '4', description: 'Sol labo microbiologie',                               ufc: null },
-];
-
 // Anciens IDs avec suffixe a/b qui ne correspondaient à aucun identifiant réel des
 // bulletins (le bulletin rapporte l'ID nu, ex. "2.3.1", jamais "2.3.1a"). On renomme
 // la variante "a" vers l'ID nu et on garde "b" comme doublon de localisation (bis).
@@ -184,22 +69,9 @@ const ID_RENAMES = [
       }
     }
 
-    // Seed des points : idempotent ligne par ligne — chaque point manquant est créé,
-    // chaque point déjà présent est laissé tel quel (sauf backfill de l'UFC démo si NULL).
-    let created = 0;
-    for (const p of DEFAULT_POINTS) {
-      const [[{ pcnt }]] = await db.query("SELECT COUNT(*) AS pcnt FROM sampling_points WHERE id = ?", [p.id]);
-      if (pcnt === 0) {
-        await db.query(
-          "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
-          [p.id, p.zone_map_id, p.label, p.x, p.y, p.point_type, p.description, p.ufc ?? null]
-        );
-        created++;
-      } else if (p.ufc !== undefined && p.ufc !== null) {
-        await db.query("UPDATE sampling_points SET ufc = ? WHERE id = ? AND ufc IS NULL", [p.ufc, p.id]);
-      }
-    }
-    if (created > 0) console.log(`✅  ${created} nouveau(x) point(s) de prélèvement initialisé(s) en base.`);
+    // Plus de seed figé ici : les points sont créés par l'import des bulletins
+    // (résolution Salle → Zone, cf. lib/pointResolution.js) ou manuellement
+    // depuis le panneau "Points à placer" en administration.
 
     // Fondation de l'historique par point (courbes par point + annulation d'import)
     await db.query(`
@@ -216,16 +88,148 @@ const ID_RENAMES = [
     `);
     await db.query(`
       CREATE TABLE IF NOT EXISTS point_history (
-        id                  INT AUTO_INCREMENT PRIMARY KEY,
-        point_id            VARCHAR(20) NOT NULL,
-        import_id           INT NULL,
-        ufc_before          DECIMAL(8,2) NULL,
-        ufc_after           DECIMAL(8,2) NULL,
-        salmonella_detected TINYINT(1) NULL,
-        recorded_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        id                   INT AUTO_INCREMENT PRIMARY KEY,
+        point_id             VARCHAR(20) NOT NULL,
+        import_id            INT NULL,
+        ufc_before           DECIMAL(8,2) NULL,
+        ufc_after            DECIMAL(8,2) NULL,
+        salmonella_detected  TINYINT(1) NULL,
+        cronobacter_detected TINYINT(1) NULL,
+        recorded_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (import_id) REFERENCES import_batches(id) ON DELETE CASCADE,
-        FOREIGN KEY (point_id)  REFERENCES sampling_points(id) ON DELETE CASCADE,
+        FOREIGN KEY (point_id)  REFERENCES sampling_points(id),
         INDEX idx_point_recorded (point_id, recorded_at)
+      )
+    `);
+    // Migration : ajoute la colonne si la table existait avant ce correctif.
+    try {
+      await db.query("ALTER TABLE point_history ADD COLUMN cronobacter_detected TINYINT(1) NULL");
+    } catch (e) {
+      if (!e.message.includes("Duplicate column")) console.warn("ALTER point_history.cronobacter_detected:", e.message);
+    }
+
+    // Migration : une base déjà initialisée avant ce correctif a la contrainte
+    // point_id en ON DELETE CASCADE — supprimer un point effaçait silencieusement
+    // ses mesures réelles. On la recrée en RESTRICT (défaut) si besoin.
+    const [fkRows] = await db.query(`
+      SELECT CONSTRAINT_NAME, DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'point_history'
+        AND REFERENCED_TABLE_NAME = 'sampling_points'
+    `);
+    const fk = fkRows[0];
+    if (fk && fk.DELETE_RULE === 'CASCADE') {
+      await db.query(`ALTER TABLE point_history DROP FOREIGN KEY \`${fk.CONSTRAINT_NAME}\``);
+      await db.query(`ALTER TABLE point_history ADD FOREIGN KEY (point_id) REFERENCES sampling_points(id)`);
+      console.log("✅  Contrainte point_history.point_id passée en RESTRICT (protection de l'historique).");
+    }
+
+    // Résolution Salle → Zone (segment S des identifiants E.S.N des bulletins)
+    // + points en attente de placement (salle inconnue, ou ID ne suivant même
+    // pas le format E.S.N) — jamais ignorés silencieusement, cf. routes/pendingPoints.js.
+    //
+    // pending_points a été ébauchée avec un schéma plus riche (reason/status/
+    // resolved_*) avant d'être simplifiée — si un précédent démarrage a déjà
+    // créé l'ancien schéma (table forcément encore vide, fonctionnalité jamais
+    // branchée à une UI), on la recrée proprement plutôt que de migrer colonne
+    // par colonne une table sans aucune donnée réelle.
+    const [[oldSchema]] = await db.query("SHOW COLUMNS FROM pending_points LIKE 'reason'").catch(() => [[null]]);
+    if (oldSchema) await db.query("DROP TABLE pending_points");
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS room_zone_map (
+        room        INT          NOT NULL PRIMARY KEY,
+        zone_map_id VARCHAR(50)  NOT NULL,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS pending_points (
+        id                   INT AUTO_INCREMENT PRIMARY KEY,
+        point_id             VARCHAR(20)   NOT NULL,
+        room                 INT           NULL,
+        point_type           CHAR(1)       NULL,
+        description          VARCHAR(255)  NOT NULL DEFAULT '',
+        ufc                  DECIMAL(8,2)  NULL,
+        salmonella_detected  TINYINT(1)    NULL,
+        cronobacter_detected TINYINT(1)    NULL,
+        import_id            INT           NULL,
+        recorded_at          TIMESTAMP     NULL DEFAULT NULL,
+        created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (import_id) REFERENCES import_batches(id) ON DELETE CASCADE,
+        INDEX idx_point (point_id)
+      )
+    `);
+    try {
+      await db.query("ALTER TABLE pending_points ADD COLUMN cronobacter_detected TINYINT(1) NULL");
+    } catch (e) {
+      if (!e.message.includes("Duplicate column")) console.warn("ALTER pending_points.cronobacter_detected:", e.message);
+    }
+
+    const ROOM_ZONE_SEED = [
+      [1, 'pesage'], [2, 'melange'], [3, 'huile'], [4, 'premix'],
+      [5, 'conditionnement'], [6, 'sas_poudres'], [11, 'matieres_premieres'],
+      [12, 'stockage_pf'], [13, 'laverie'], [14, 'vestiaires_h'],
+      [15, 'vestiaires_f'], [16, 'vestiaires_visiteur'],
+      [17, 'labo_microbiologie'], [18, 'vestiaire_laverie'],
+    ];
+    for (const [room, zoneMapId] of ROOM_ZONE_SEED) {
+      await db.query(
+        "INSERT INTO room_zone_map (room, zone_map_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE zone_map_id = VALUES(zone_map_id)",
+        [room, zoneMapId]
+      );
+    }
+
+    // Rattrapage : la déduction de zone par mots-clés (guessZoneFromDescription)
+    // n'existait pas encore quand certaines entrées en attente ont été créées —
+    // on retente leur résolution automatique à chaque démarrage, pour ne pas
+    // laisser à l'admin des points que le système sait désormais placer seul.
+    const { parsePointId, resolveZoneForRoom, guessZoneFromDescription, placePendingPoint } = require("./lib/pointResolution");
+    const [stuckPending] = await db.query("SELECT * FROM pending_points");
+    let autoResolved = 0;
+    for (const row of stuckPending) {
+      const parsed = parsePointId(row.point_id);
+      const zoneMapId =
+        (parsed ? await resolveZoneForRoom(parsed.room) : null) ||
+        guessZoneFromDescription(row.description);
+      if (!zoneMapId) continue;
+      await placePendingPoint(row, zoneMapId);
+      await db.query("DELETE FROM pending_points WHERE id = ?", [row.id]);
+      autoResolved++;
+    }
+    if (autoResolved > 0) {
+      console.log(`✅  ${autoResolved} point(s) en attente résolu(s) automatiquement (salle/mots-clés).`);
+    }
+
+    // Actions correctives (CAPA minimal) — suivi d'une non-conformité jusqu'à
+    // sa résolution (responsable, échéance, statut).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS corrective_actions (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        point_id     VARCHAR(20)   NOT NULL,
+        description  VARCHAR(500)  NOT NULL,
+        responsible  VARCHAR(100)  NOT NULL,
+        due_date     DATE          NULL,
+        status       ENUM('ouverte','fermee') NOT NULL DEFAULT 'ouverte',
+        opened_by    VARCHAR(100)  NOT NULL,
+        opened_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        closed_by    VARCHAR(100)  NULL,
+        closed_at    TIMESTAMP     NULL DEFAULT NULL,
+        FOREIGN KEY (point_id) REFERENCES sampling_points(id),
+        INDEX idx_status (status),
+        INDEX idx_point (point_id)
+      )
+    `);
+
+    // Lots de production (traçabilité minimale) — voir quels lots étaient en
+    // production pendant une période de contamination.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS production_batches (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        reference   VARCHAR(100) NOT NULL UNIQUE,
+        date_start  DATE         NOT NULL,
+        date_end    DATE         NULL,
+        created_by  VARCHAR(100) NOT NULL,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -279,6 +283,9 @@ app.use("/api/zones",      require("./routes/zones"));
 app.use("/api/points",     require("./routes/points"));
 app.use("/api/settings",   require("./routes/settings"));
 app.use("/api/lab-results", require("./routes/labResults"));
+app.use("/api/pending-points", require("./routes/pendingPoints"));
+app.use("/api/corrective-actions", require("./routes/correctiveActions"));
+app.use("/api/production-batches", require("./routes/productionBatches"));
 
 // ── Health check ─────────────────────────────
 app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date() }));

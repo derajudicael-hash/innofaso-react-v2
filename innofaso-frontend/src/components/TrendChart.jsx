@@ -133,10 +133,26 @@ export function drawChart(canvas, series, seuil) {
         ctx.fillText("!", p.x, p.y - 9);
       }
 
+      // Repère Cronobacter : même principe, décalé pour ne pas chevaucher le
+      // repère salmonelle si les deux sont détectés sur le même relevé.
+      if (p.src.cronobacter === true) {
+        ctx.beginPath();
+        ctx.arc(p.x + 10, p.y - 12, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#7c3aed";
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = "#fff";
+        ctx.font      = "bold 9px 'DM Sans', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("!", p.x + 10, p.y - 9);
+      }
+
       hitPoints.push({
         x: p.x, y: p.y,
-        pointId: s.pointId, label: s.label, color: s.color,
-        ufc: p.src.ufc, date: p.src.date, salmonella: p.src.salmonella,
+        pointId: s.pointId, label: s.label, description: s.description, color: s.color,
+        ufc: p.src.ufc, date: p.src.date, salmonella: p.src.salmonella, cronobacter: p.src.cronobacter,
       });
     });
   });
@@ -212,10 +228,18 @@ export default function TrendChart({ series, seuil }) {
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: hover.color, display: "inline-block", flexShrink: 0 }} />
             {hover.label || hover.pointId}
           </div>
+          {hover.description && (
+            <div style={{ color: "#cbd5e1", marginTop: 2, whiteSpace: "normal", maxWidth: 220 }}>
+              {hover.description}
+            </div>
+          )}
           <div style={{ color: "#60a5fa", marginTop: 2 }}>{fmtDateFull(new Date(hover.date))}</div>
           <div style={{ color: "#fbbf24" }}>{hover.ufc} UFC/cm²</div>
           {hover.salmonella === true && (
             <div style={{ color: "#ff8a7a", fontWeight: 700, marginTop: 2 }}>⚠ Salmonelles détectées</div>
+          )}
+          {hover.cronobacter === true && (
+            <div style={{ color: "#c4b5fd", fontWeight: 700, marginTop: 2 }}>⚠ Cronobacter détecté</div>
           )}
         </div>
       )}

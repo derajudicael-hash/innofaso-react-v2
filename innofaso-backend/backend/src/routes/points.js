@@ -5,11 +5,21 @@ const auth             = require("../middleware/auth");
 const router = express.Router();
 
 // GET /api/points — tous les points (public)
+//
+// last_measured_at : date du dernier relevé réel (point_history, en excluant
+// les imports annulés) — permet de signaler un point non recontrôlé depuis
+// longtemps, qui sinon reste affiché "conforme" indéfiniment sur sa dernière
+// valeur connue sans que personne ne soit jamais alerté de son ancienneté.
 router.get("/", async (req, res) => {
   try {
-    const [rows] = await db.query(
-      "SELECT * FROM sampling_points ORDER BY zone_map_id, id"
-    );
+    const [rows] = await db.query(`
+      SELECT sp.*,
+        (SELECT MAX(ph.recorded_at) FROM point_history ph
+         JOIN import_batches ib ON ib.id = ph.import_id
+         WHERE ph.point_id = sp.id AND ib.status != 'annule') AS last_measured_at
+      FROM sampling_points sp
+      ORDER BY sp.zone_map_id, sp.id
+    `);
     res.json(rows);
   } catch (err) {
     console.error("GET /points error:", err);
@@ -78,11 +88,21 @@ router.put("/:id", auth, async (req, res) => {
 });
 
 // DELETE /api/points/:id — supprimer un point (tout compte connecté : superadmin ou éditeur)
+//
+// Un point ayant déjà des mesures réelles (point_history) ne peut pas être
+// supprimé : la contrainte FK (RESTRICT, cf. database.sql) bloque la requête
+// plutôt que d'effacer silencieusement l'historique de mesures labo.
 router.delete("/:id", auth, async (req, res) => {
   try {
-    await db.query("DELETE FROM sampling_points WHERE id=?", [req.params.id]);
+    const [result] = await db.query("DELETE FROM sampling_points WHERE id=?", [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Point introuvable." });
     res.json({ message: "Point supprimé." });
   } catch (err) {
+    if (err.code === "ER_ROW_IS_REFERENCED_2" || err.code === "ER_ROW_IS_REFERENCED") {
+      return res.status(409).json({
+        error: "Ce point a déjà des mesures labo enregistrées dans son historique — il ne peut pas être supprimé sans perdre ces données.",
+      });
+    }
     console.error("DELETE /points/:id error:", err);
     res.status(500).json({ error: "Erreur serveur." });
   }

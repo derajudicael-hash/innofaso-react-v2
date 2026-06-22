@@ -27,40 +27,8 @@ function Field({ label, children }) {
 }
 
 export default function SettingsPage() {
-  const { thresholds, setThresholds, siteInfo, setSiteInfo } = useAdminData();
+  const { siteInfo, setSiteInfo } = useAdminData();
   const { user } = useAuth();
-
-  // ── Thresholds ──
-  const [thresh,      setThresh]      = useState({ warning: 40, critical: 50 });
-  const [threshSaving, setThreshSaving] = useState(false);
-  const [threshMsg,   setThreshMsg]   = useState(null);
-
-  useEffect(() => {
-    setThresh({ warning: thresholds.warning ?? 40, critical: thresholds.critical ?? 50 });
-  }, [thresholds]);
-
-  const saveThresholds = async () => {
-    const w = Number(thresh.warning);
-    const c = Number(thresh.critical);
-    if (!Number.isFinite(w) || !Number.isFinite(c) || w < 1 || c < 1) {
-      setThreshMsg({ ok: false, text: "Les seuils doivent être des nombres entiers positifs." });
-      return;
-    }
-    if (w >= c) {
-      setThreshMsg({ ok: false, text: "Le seuil Surveillance doit être strictement inférieur au seuil Critique." });
-      return;
-    }
-    setThreshSaving(true);
-    try {
-      await setThresholds({ warning: w, critical: c });
-      setThreshMsg({ ok: true, text: "Seuils mis à jour. Les statuts des zones ont été recalculés." });
-    } catch (e) {
-      setThreshMsg({ ok: false, text: e.message || "Erreur lors de la sauvegarde." });
-    } finally {
-      setThreshSaving(false);
-      setTimeout(() => setThreshMsg(null), 4000);
-    }
-  };
 
   // ── Site info ──
   const [site,      setSite]      = useState({});
@@ -114,55 +82,9 @@ export default function SettingsPage() {
   return (
     <div className="settings-page">
       <div className="page-title">Paramètres</div>
-      <div className="page-sub">Configuration des seuils de contamination et des informations du site</div>
+      <div className="page-sub">Informations du site et compte administrateur</div>
 
       <div className="settings-grid">
-
-        {/* ── Seuils ── */}
-        <SettingsSection title="Seuils de contamination UFC/cm²">
-          <p className="settings-info">
-            Les statuts des zones sont calculés selon <strong>NF EN ISO 18593</strong> par type
-            de point de prélèvement : Type 1 = 10, Type 2 = 50, Type 3 = 100, Type 4 = 500 UFC/cm².
-            La surveillance commence à 80 % du seuil. Les valeurs ci-dessous sont conservées
-            comme référence complémentaire pour les graphiques.
-          </p>
-
-          <Field label="Seuil Surveillance (UFC/cm²)">
-            <input
-              type="number" min="1" max="999"
-              value={thresh.warning}
-              onChange={(e) => setThresh((t) => ({ ...t, warning: e.target.value }))}
-              className="settings-input orange"
-              disabled={!user}
-            />
-          </Field>
-
-          <Field label="Seuil Critique (UFC/cm²)">
-            <input
-              type="number" min="1" max="999"
-              value={thresh.critical}
-              onChange={(e) => setThresh((t) => ({ ...t, critical: e.target.value }))}
-              className="settings-input red"
-              disabled={!user}
-            />
-          </Field>
-
-          <div className="settings-thresh-preview">
-            <span className="status-badge ok">Conforme</span>
-            <span className="settings-thresh-arrow">0–{Number(thresh.warning) - 1} UFC/cm²</span>
-            <span className="status-badge warning">Surveillance</span>
-            <span className="settings-thresh-arrow">{thresh.warning}–{Number(thresh.critical) - 1}</span>
-            <span className="status-badge critical">Critique</span>
-            <span className="settings-thresh-arrow">&gt;= {thresh.critical}</span>
-          </div>
-
-          <FeedbackMsg msg={threshMsg} />
-
-          <button className="settings-btn" onClick={saveThresholds} disabled={threshSaving || !user}>
-            {threshSaving ? "Enregistrement…" : "Enregistrer les seuils"}
-          </button>
-          {!user && <p className="settings-locked">Connectez-vous en tant qu'administrateur pour modifier.</p>}
-        </SettingsSection>
 
         {/* ── Site info ── */}
         <SettingsSection title="Informations du site">

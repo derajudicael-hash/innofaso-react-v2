@@ -48,7 +48,7 @@ export function resultUfc(results) {
  * - hasData = true si au moins un point a un UFC saisi
  */
 export function useComputedZones(activeResults = null) {
-  const { zones, thresholds, loading, error, ...rest } = useAdminData();
+  const { zones, loading, error, ...rest } = useAdminData();
   const { pointsByZone } = usePoints();
 
   const computedZones = useMemo(() => {
@@ -120,5 +120,5 @@ export function useComputedZones(activeResults = null) {
       });
   }, [zones, pointsByZone, activeResults]);
 
-  return { computedZones, thresholds, loading, error, ...rest };
+  return { computedZones, loading, error, ...rest };
 }

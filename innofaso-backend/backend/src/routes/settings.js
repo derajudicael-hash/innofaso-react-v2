@@ -5,39 +5,6 @@ const auth    = require("../middleware/auth");
 const router = express.Router();
 
 // ─────────────────────────────────────────────
-// GET /api/settings/thresholds
-// ─────────────────────────────────────────────
-router.get("/thresholds", async (req, res) => {
-  try {
-    const [rows] = await db.query("SELECT name, value FROM thresholds");
-    const result = {};
-    rows.forEach((r) => { result[r.name] = Number(r.value); });
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: "Erreur serveur." });
-  }
-});
-
-// ─────────────────────────────────────────────
-// PUT /api/settings/thresholds  (tout compte connecté : superadmin ou éditeur)
-// ─────────────────────────────────────────────
-router.put("/thresholds", auth, async (req, res) => {
-  const { critical, warning } = req.body;
-  if (Number(warning) >= Number(critical)) {
-    return res.status(400).json({ error: "Le seuil warning doit être inférieur au seuil critique." });
-  }
-  try {
-    await db.query(
-      "INSERT INTO thresholds (name, value) VALUES ('critical',?),('warning',?) ON DUPLICATE KEY UPDATE value=VALUES(value)",
-      [critical, warning]
-    );
-    res.json({ critical: Number(critical), warning: Number(warning) });
-  } catch (err) {
-    res.status(500).json({ error: "Erreur serveur." });
-  }
-});
-
-// ─────────────────────────────────────────────
 // GET /api/settings/site
 // ─────────────────────────────────────────────
 router.get("/site", async (req, res) => {

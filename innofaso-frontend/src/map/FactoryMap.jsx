@@ -156,7 +156,7 @@ export default function FactoryMap({ results, backendZones = [], dynamicPoints, 
         {/* ZONES */}
         {ZONES.map(zone => {
           const zx = px(zone.x), zy = py(zone.y), zw = px(zone.width), zh = py(zone.height);
-          const zonePts = dynamicPoints?.[zone.id] ?? zone.points;
+          const zonePts = dynamicPoints?.[zone.id] ?? [];
           const zonePointIds = zonePts.map(p => p.id);
           const level = getZoneLevel(results, zonePointIds);
           const isSelected = selectedZone?.id === zone.id;

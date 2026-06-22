@@ -26,11 +26,13 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
   const PARAM_COLOR = {
     enterobacteries: '#2563eb',
     salmonelles:     '#d97706',
+    cronobacter:     '#7c3aed',
     unknown:         '#6b7280',
   };
   const PARAM_SHORT = {
     enterobacteries: 'EB',
     salmonelles:     'Salm.',
+    cronobacter:     'Crono.',
     unknown:         '?',
   };
 

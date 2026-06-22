@@ -2,8 +2,16 @@ import mammoth from 'mammoth';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
+// Salmonelles ET Cronobacter (Enterobacter sakazakii) sont des paramètres de
+// présence/absence — pas de comptage. Cronobacter est le pathogène de
+// surveillance environnementale le plus spécifiquement critique pour un RUTF
+// (aliment thérapeutique prêt à l'emploi, cf. référentiels WHO/UNICEF/Codex),
+// au même titre que Salmonelles : un résultat détecté est toujours critique,
+// quel que soit l'UFC entérobactéries du même point.
+const PRESENCE_PARAMETERS = ['salmonelles', 'cronobacter'];
+
 export function getLevel(result) {
-  if (result.parameter === 'salmonelles') {
+  if (PRESENCE_PARAMETERS.includes(result.parameter)) {
     if (result.detected === null) return 'unknown';
     return result.detected ? 'present' : 'absent';
   }
@@ -104,6 +112,7 @@ function parseSpec(raw) {
 function detectParam(text) {
   const l = text.toLowerCase();
   if (l.includes('salmonell')) return 'salmonelles';
+  if (l.includes('cronobacter') || l.includes('sakazakii')) return 'cronobacter';
   if (l.includes('entérobact') || l.includes('enterobact')) return 'enterobacteries';
   return 'unknown';
 }
@@ -191,8 +200,8 @@ export async function parseDocx(file) {
       pointId,
       description: extractDesc(cells[0]),
       rawValue,
-      numericValue: param !== 'salmonelles' ? parseUFCValue(rawValue) : null,
-      detected: param === 'salmonelles' ? parseDetected(rawValue) : null,
+      numericValue: !PRESENCE_PARAMETERS.includes(param) ? parseUFCValue(rawValue) : null,
+      detected: PRESENCE_PARAMETERS.includes(param) ? parseDetected(rawValue) : null,
       spec: parseSpec(specRaw),
       parameter: param,
       method,
@@ -221,7 +230,8 @@ export async function parseCSV(file) {
             const specRaw = row['spec'] || row['Spec'] || row['specification'] || '';
             const paramRaw = (row['parametre'] || row['parameter'] || '').toLowerCase();
             const param = paramRaw.includes('salmo') ? 'salmonelles'
-              : paramRaw.includes('entero') || paramRaw.includes('entéro') ? 'enterobacteries' : 'enterobacteries';
+              : paramRaw.includes('crono') || paramRaw.includes('sakazakii') ? 'cronobacter'
+              : 'enterobacteries';
             const numVal = parseFloat(rawValue.replace(',', '.'));
             return {
               pointId, description: row['description'] || '',
@@ -260,7 +270,8 @@ export async function parseXLSX(file) {
     const numVal = parseFloat(rawValue.replace(',', '.'));
     const paramRaw = String(row['parametre'] || row['parameter'] || '').toLowerCase();
     const param = paramRaw.includes('salmo') ? 'salmonelles'
-      : paramRaw.includes('entero') || paramRaw.includes('entéro') ? 'enterobacteries' : 'enterobacteries';
+      : paramRaw.includes('crono') || paramRaw.includes('sakazakii') ? 'cronobacter'
+      : 'enterobacteries';
     return {
       pointId, description: String(row['description'] || ''),
       rawValue,

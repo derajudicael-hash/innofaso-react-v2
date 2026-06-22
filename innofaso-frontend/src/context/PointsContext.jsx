@@ -1,41 +1,19 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { pointsAPI } from "../services/api";
-import { ZONES } from "../map/factoryData.js";
 
 function toFrontend(p) {
   return {
-    id:          p.id,
-    zoneMapId:   p.zone_map_id,
-    label:       p.label,
-    x:           Number(p.x),
-    y:           Number(p.y),
-    pointType:   p.point_type,
-    description: p.description,
-    ufc:         p.ufc !== null && p.ufc !== undefined ? Number(p.ufc) : null,
+    id:             p.id,
+    zoneMapId:      p.zone_map_id,
+    label:          p.label,
+    x:              Number(p.x),
+    y:              Number(p.y),
+    pointType:      p.point_type,
+    description:    p.description,
+    ufc:            p.ufc !== null && p.ufc !== undefined ? Number(p.ufc) : null,
+    lastMeasuredAt: p.last_measured_at ?? null,
   };
 }
-
-// Build fallback points from static factoryData.ts
-function buildFallbackPoints() {
-  const pts = [];
-  ZONES.forEach(zone => {
-    zone.points.forEach(p => {
-      pts.push({
-        id: p.id,
-        zone_map_id: zone.id,
-        label: p.label,
-        x: p.x,
-        y: p.y,
-        point_type: p.pointType,
-        description: p.description,
-        ufc: p.ufc ?? null,
-      });
-    });
-  });
-  return pts;
-}
-
-const FALLBACK_POINTS = buildFallbackPoints();
 
 // Distingue une vraie panne réseau (backend hors-ligne, cf. services/api.js
 // `request()`) d'une erreur métier renvoyée par le serveur (ex. ID de point
@@ -62,8 +40,12 @@ function toFrontendPartial(data) {
 const PointsContext = createContext(null);
 
 export function PointsProvider({ children }) {
-  const [points,  setPoints]  = useState(FALLBACK_POINTS.map(toFrontend));
-  const [loading, setLoading] = useState(false);
+  const [points,  setPoints]  = useState([]);
+  const [loading, setLoading] = useState(true);
+  // true si le chargement initial a échoué (backend inaccessible) — plus de
+  // repli sur une liste de points codée en dur : on préfère le signaler
+  // clairement plutôt que d'afficher silencieusement de fausses données.
+  const [error,   setError]   = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -71,12 +53,10 @@ export function PointsProvider({ children }) {
     setLoading(true);
     try {
       const data = await pointsAPI.getAll();
-      if (data && data.length > 0) {
-        setPoints(data.map(toFrontend));
-      }
+      setPoints(data.map(toFrontend));
+      setError(false);
     } catch {
-      // Fallback to static points already set as initial state
-      console.info("📡 Points: Backend indisponible — utilisation des données statiques");
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -132,7 +112,7 @@ export function PointsProvider({ children }) {
   };
 
   return (
-    <PointsContext.Provider value={{ points, pointsByZone, ufcByZone, addPoint, updatePoint, deletePoint, loading, reload: load }}>
+    <PointsContext.Provider value={{ points, pointsByZone, ufcByZone, addPoint, updatePoint, deletePoint, loading, error, reload: load }}>
       {children}
     </PointsContext.Provider>
   );

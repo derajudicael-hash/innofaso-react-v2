@@ -2,11 +2,29 @@ const express = require("express");
 const db      = require("../db");
 const auth             = require("../middleware/auth");
 const { requireAdmin } = require("../middleware/auth");
+const { recomputeZone } = require("../lib/recomputeZone");
+const { parsePointId, resolveZoneForRoom, computeNewPointPosition, guessZoneFromDescription } = require("../lib/pointResolution");
 
 const router = express.Router();
 
-// Fenêtre glissante de l'historique par point (cf. refonte historique juin 2026)
-const RETENTION_DAYS = 30;
+// Fenêtre glissante de l'historique par point (cf. refonte historique juin 2026).
+// 365 jours plutôt que 30 : un référentiel qualité alimentaire impose en
+// général une conservation des relevés de surveillance sur plusieurs mois à
+// plusieurs années pour les audits — 30 jours était trop court pour un usage
+// réel, même avec le rappel d'export en place.
+const RETENTION_DAYS = 365;
+
+// Purge les relevés plus anciens que la fenêtre de rétention — appelée après
+// chaque import plutôt qu'au moment d'une lecture (GET /history) : une
+// requête de lecture ne doit jamais avoir d'effet de bord sur les données.
+async function purgeOldHistory() {
+  await db.query(
+    `DELETE ph FROM point_history ph
+     JOIN import_batches ib ON ib.id = ph.import_id
+     WHERE ib.imported_at < DATE_SUB(NOW(), INTERVAL ? DAY)`,
+    [RETENTION_DAYS]
+  );
+}
 
 // Convertit une date "JJ/MM/AAAA" (extraite du bulletin par le frontend,
 // cf. labParser.js) en objet Date — utilisé comme date de relevé dans
@@ -47,25 +65,28 @@ function pickReportDate(results) {
   return new Date();
 }
 
-// Recalcule l'UFC max d'une zone à partir de ses points mesurés, journalise
-// zone_history (purge 90 jours) et met à jour zones.ufc — utilisé après tout
-// import ou toute annulation d'import qui touche les points de cette zone.
-async function recomputeZone(zoneMapId) {
-  const [[zoneRow]] = await db.query("SELECT id FROM zones WHERE map_id = ?", [zoneMapId]);
-  if (!zoneRow) return;
-
-  const [pts] = await db.query(
-    "SELECT ufc FROM sampling_points WHERE zone_map_id = ? AND ufc IS NOT NULL",
-    [zoneMapId]
-  );
-  const maxUfc = pts.length > 0 ? Math.max(...pts.map(p => Number(p.ufc))) : 0;
-
-  await db.query("INSERT INTO zone_history (zone_id, ufc) VALUES (?, ?)", [zoneRow.id, maxUfc]);
-  await db.query(
-    "DELETE FROM zone_history WHERE zone_id = ? AND recorded_at < DATE_SUB(NOW(), INTERVAL 90 DAY)",
-    [zoneRow.id]
-  );
-  await db.query("UPDATE zones SET ufc = ? WHERE id = ?", [maxUfc, zoneRow.id]);
+// ─────────────────────────────────────────────
+// Met en file un identifiant de bulletin qu'on n'a pas pu rattacher à une
+// zone automatiquement (salle inconnue de room_zone_map, ou ID ne suivant
+// même pas le format E.S.N) — jamais ignoré silencieusement. Si une entrée
+// en attente existe déjà pour ce même point_id (bulletin réimporté avant
+// résolution), elle est mise à jour plutôt que dupliquée.
+// ─────────────────────────────────────────────
+async function queuePending({ pointId, room, pointType, description, ufc, salmonella, cronobacter, importId, recordedAt }) {
+  const [[existing]] = await db.query("SELECT id FROM pending_points WHERE point_id = ?", [pointId]);
+  if (existing) {
+    await db.query(
+      `UPDATE pending_points SET room=?, point_type=?, description=?, ufc=?, salmonella_detected=?, cronobacter_detected=?, import_id=?, recorded_at=?
+       WHERE id = ?`,
+      [room, pointType, description, ufc, salmonella, cronobacter, importId, recordedAt, existing.id]
+    );
+  } else {
+    await db.query(
+      `INSERT INTO pending_points (point_id, room, point_type, description, ufc, salmonella_detected, cronobacter_detected, import_id, recorded_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [pointId, room, pointType, description, ufc, salmonella, cronobacter, importId, recordedAt]
+    );
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -103,24 +124,81 @@ router.post("/import", auth, async (req, res) => {
       const entry = byPoint.get(pointId);
       if (r.parameter === "salmonelles") {
         entry.salmonella = r.detected ?? null;
+      } else if (r.parameter === "cronobacter") {
+        entry.cronobacter = r.detected ?? null;
       } else if (r.numericValue !== undefined && r.numericValue !== null) {
         entry.ufc = r.numericValue;
       }
+      if (r.description) entry.description = r.description;
     }
 
-    const unmatchedIds = [];
+    // Journal de l'import créé en premier : sert à la fois aux points déjà
+    // connus (touches), aux points nouvellement créés, et aux points mis en
+    // attente (pending_points.import_id) — traçabilité complète, même si le
+    // bulletin ne contient que des identifiants inconnus.
+    const [batch] = await db.query(
+      "INSERT INTO import_batches (filename, imported_by, result_count) VALUES (?, ?, ?)",
+      [filename || "bulletin", req.user?.name || req.user?.username || "admin", results.length]
+    );
+    const importId = batch.insertId;
+
+    const createdIds  = [];
+    const pendingIds  = [];
     const touchedZones = new Set();
     const touches = []; // { pointId, ufcBefore, ufcAfter, salmonella }
     let updatedCount = 0;
 
     for (const [pointId, entry] of byPoint) {
       const [[row]] = await db.query(
-        "SELECT zone_map_id, ufc FROM sampling_points WHERE id = ?",
+        "SELECT zone_map_id, ufc, label FROM sampling_points WHERE id = ?",
         [pointId]
       );
 
       if (!row) {
-        unmatchedIds.push(pointId);
+        // Point inconnu : on tente de le rattacher automatiquement, par ordre
+        // de fiabilité — 1) salle déjà cartographiée (2e segment de l'ID
+        // E.S.N), 2) mots-clés de sa description dans le bulletin (cf.
+        // guessZoneFromDescription) — et seulement si les deux échouent, on
+        // le met en attente pour que l'admin choisisse la zone.
+        const parsed = parsePointId(pointId);
+        const roomResolved = parsed ? await resolveZoneForRoom(parsed.room) : null;
+        const guessed      = roomResolved ? null : guessZoneFromDescription(entry.description);
+        const zoneMapId    = roomResolved || guessed;
+
+        if (zoneMapId) {
+          const pointType = parsed?.env ?? (String(pointId).match(/^(\d+)\./)?.[1] ?? "1");
+          const pos = await computeNewPointPosition(zoneMapId);
+          await db.query(
+            "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
+            [pointId, zoneMapId, pointId, pos.x, pos.y, pointType, entry.description || "", entry.ufc ?? null]
+          );
+          createdIds.push(pointId);
+          touchedZones.add(zoneMapId);
+          touches.push({ pointId, ufcBefore: null, ufcAfter: entry.ufc ?? null, salmonella: entry.salmonella ?? null, cronobacter: entry.cronobacter ?? null });
+
+          // La salle vient d'être déduite par mots-clés : on l'enregistre
+          // dans room_zone_map pour que les imports suivants la rattachent
+          // directement (tier 1) sans repasser par la déduction par texte.
+          if (guessed && parsed?.room != null) {
+            await db.query(
+              "INSERT INTO room_zone_map (room, zone_map_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE zone_map_id = VALUES(zone_map_id)",
+              [parsed.room, zoneMapId]
+            );
+          }
+        } else {
+          await queuePending({
+            pointId,
+            room: parsed?.room ?? null,
+            pointType: parsed?.env ?? null,
+            description: entry.description || "",
+            ufc: entry.ufc ?? null,
+            salmonella: entry.salmonella ?? null,
+            cronobacter: entry.cronobacter ?? null,
+            importId,
+            recordedAt: reportDate,
+          });
+          pendingIds.push(pointId);
+        }
         continue;
       }
 
@@ -134,34 +212,48 @@ router.post("/import", auth, async (req, res) => {
       }
 
       touchedZones.add(row.zone_map_id);
-      touches.push({ pointId, ufcBefore, ufcAfter, salmonella: entry.salmonella ?? null });
+      touches.push({ pointId, ufcBefore, ufcAfter, salmonella: entry.salmonella ?? null, cronobacter: entry.cronobacter ?? null });
+
+      // Points dupliqués par label (ex. '2.3.1' / '2.3.1b' désignent 2 points
+      // physiques distincts mais le bulletin ne rapporte jamais que l'ID nu) :
+      // le résultat s'applique à tous les points partageant ce label, sinon
+      // les variantes suffixées ne reçoivent jamais aucune mise à jour réelle.
+      const [siblings] = await db.query(
+        "SELECT id, zone_map_id, ufc FROM sampling_points WHERE label = ? AND id != ?",
+        [row.label, pointId]
+      );
+      for (const sib of siblings) {
+        if (byPoint.has(sib.id)) continue; // déjà géré par sa propre entrée du bulletin
+        const sibUfcBefore = sib.ufc !== null ? Number(sib.ufc) : null;
+        const sibUfcAfter  = hasUfc ? entry.ufc : sibUfcBefore;
+        if (hasUfc) {
+          await db.query("UPDATE sampling_points SET ufc = ? WHERE id = ?", [sibUfcAfter, sib.id]);
+          updatedCount++;
+        }
+        touchedZones.add(sib.zone_map_id);
+        touches.push({ pointId: sib.id, ufcBefore: sibUfcBefore, ufcAfter: sibUfcAfter, salmonella: entry.salmonella ?? null, cronobacter: entry.cronobacter ?? null });
+      }
     }
 
-    let importId = null;
-    if (touches.length > 0) {
-      const [batch] = await db.query(
-        "INSERT INTO import_batches (filename, imported_by, result_count) VALUES (?, ?, ?)",
-        [filename || "bulletin", req.user?.name || req.user?.username || "admin", results.length]
+    for (const t of touches) {
+      await db.query(
+        "INSERT INTO point_history (point_id, import_id, ufc_before, ufc_after, salmonella_detected, cronobacter_detected, recorded_at) VALUES (?,?,?,?,?,?,?)",
+        [t.pointId, importId, t.ufcBefore, t.ufcAfter, t.salmonella, t.cronobacter, reportDate]
       );
-      importId = batch.insertId;
-
-      for (const t of touches) {
-        await db.query(
-          "INSERT INTO point_history (point_id, import_id, ufc_before, ufc_after, salmonella_detected, recorded_at) VALUES (?,?,?,?,?,?)",
-          [t.pointId, importId, t.ufcBefore, t.ufcAfter, t.salmonella, reportDate]
-        );
-      }
     }
 
     for (const zoneMapId of touchedZones) {
       await recomputeZone(zoneMapId);
     }
 
+    await purgeOldHistory();
+
     res.json({
       message: "Résultats importés avec succès",
       count: results.length,
       updated: updatedCount,
-      unmatchedIds,
+      created: createdIds,
+      pending: pendingIds,
       importId,
     });
   } catch (err) {
@@ -190,10 +282,17 @@ router.get("/imports", async (req, res) => {
 // POST /api/lab-results/:importId/undo — annule un import (superadmin)
 //
 // Règle de sécurité (décidée avec l'utilisateur) : restaure la valeur d'avant
-// import pour chaque point touché, SAUF si un import plus récent a déjà
-// retouché ce même point — dans ce cas on retire seulement les points de
-// courbe ajoutés par l'import annulé, sans écraser une donnée plus récente.
-// Toujours disponible, quelle que soit l'ancienneté de l'import.
+// import pour chaque point touché, SAUF si un import plus récent (et non
+// lui-même annulé) a déjà retouché ce même point — dans ce cas on retire
+// seulement les points de courbe ajoutés par l'import annulé, sans écraser
+// une donnée plus récente. Toujours disponible, quelle que soit l'ancienneté.
+//
+// Important (intégrité de l'audit) : on ne supprime JAMAIS physiquement une
+// ligne de point_history, même annulée — un enregistrement de mesure labo
+// réel ne doit jamais disparaître d'une base de données qualité, y compris
+// par erreur. L'import annulé est simplement marqué status='annule' et les
+// requêtes de lecture (GET /history, le check "later" ci-dessous) l'excluent
+// explicitement des courbes actives.
 // ─────────────────────────────────────────────
 router.post("/:importId/undo", auth, requireAdmin, async (req, res) => {
   const importId = Number(req.params.importId);
@@ -219,7 +318,10 @@ router.post("/:importId/undo", auth, requireAdmin, async (req, res) => {
 
     for (const row of rows) {
       const [[later]] = await db.query(
-        "SELECT id FROM point_history WHERE point_id = ? AND id > ? LIMIT 1",
+        `SELECT ph.id FROM point_history ph
+         JOIN import_batches ib ON ib.id = ph.import_id
+         WHERE ph.point_id = ? AND ph.id > ? AND ib.status != 'annule'
+         LIMIT 1`,
         [row.point_id, row.id]
       );
 
@@ -231,10 +333,6 @@ router.post("/:importId/undo", auth, requireAdmin, async (req, res) => {
       } else {
         keptPoints.push(row.point_id);
       }
-
-      // L'import annulé ne doit plus apparaître dans les courbes, peu importe
-      // le cas (restauré ou conservé).
-      await db.query("DELETE FROM point_history WHERE id = ?", [row.id]);
     }
 
     for (const zoneMapId of touchedZones) {
@@ -258,14 +356,49 @@ router.post("/:importId/undo", auth, requireAdmin, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// DELETE /api/lab-results/:importId — supprime définitivement un import déjà
+// annulé (superadmin). Contrairement à l'annulation ci-dessus, qui ne touche
+// jamais physiquement point_history (intégrité d'audit), cette suppression
+// efface l'import et tout son historique réel — comme s'il n'avait jamais
+// été importé. Réservée à un import déjà annulé : impossible de supprimer
+// directement un import actif sans passer par l'annulation au préalable.
+// Décision utilisateur (juin 2026) : aucun garde-fou ici (contrairement à
+// l'annulation, qui protège les imports plus récents) — suppression brute.
+// ─────────────────────────────────────────────
+router.delete("/:importId", auth, requireAdmin, async (req, res) => {
+  const importId = Number(req.params.importId);
+  if (!Number.isInteger(importId)) {
+    return res.status(400).json({ error: "Identifiant d'import invalide." });
+  }
+
+  try {
+    const [[batch]] = await db.query("SELECT * FROM import_batches WHERE id = ?", [importId]);
+    if (!batch) return res.status(404).json({ error: "Import introuvable." });
+    if (batch.status !== "annule") {
+      return res.status(400).json({ error: "Seul un import déjà annulé peut être supprimé complètement." });
+    }
+
+    // point_history.import_id est en ON DELETE CASCADE : la suppression de
+    // l'import efface aussi tout son historique réel en une seule requête.
+    await db.query("DELETE FROM import_batches WHERE id = ?", [importId]);
+
+    res.json({ message: "Import supprimé définitivement." });
+  } catch (err) {
+    console.error("Delete import error:", err);
+    res.status(500).json({ error: "Erreur lors de la suppression de l'import." });
+  }
+});
+
+// ─────────────────────────────────────────────
 // GET /api/lab-results/history?zoneMapId=... — courbes par point d'une zone
 // (lecture publique, comme GET /api/zones et GET /api/points)
 //
-// Purge au passage les relevés de plus de 30 jours (fenêtre glissante) —
-// le frontend doit avertir l'utilisateur AVANT que ça n'arrive via
-// GET /retention-status.
+// La purge de rétention (cf. purgeOldHistory ci-dessus) se fait désormais
+// après chaque import, jamais ici : une lecture ne doit jamais avoir d'effet
+// de bord sur les données (anti-pattern corrigé — auparavant un simple
+// chargement de courbe déclenchait une suppression en base).
 //
-// La fenêtre de 30 jours est une politique de STOCKAGE (durée pendant
+// La fenêtre de rétention est une politique de STOCKAGE (durée pendant
 // laquelle le système garde l'historique avant de devoir l'exporter), pas
 // une fenêtre sur la date réelle du bulletin — elle se compte donc depuis
 // le moment où le bulletin a été importé (import_batches.imported_at), et
@@ -278,19 +411,13 @@ router.get("/history", async (req, res) => {
   if (!zoneMapId) return res.status(400).json({ error: "zoneMapId requis." });
 
   try {
-    await db.query(
-      `DELETE ph FROM point_history ph
-       JOIN import_batches ib ON ib.id = ph.import_id
-       WHERE ib.imported_at < DATE_SUB(NOW(), INTERVAL ? DAY)`,
-      [RETENTION_DAYS]
-    );
-
     const [rows] = await db.query(
-      `SELECT ph.point_id, ph.ufc_after, ph.salmonella_detected, ph.recorded_at,
+      `SELECT ph.point_id, ph.ufc_after, ph.salmonella_detected, ph.cronobacter_detected, ph.recorded_at,
               sp.label, sp.description, sp.point_type
        FROM point_history ph
        JOIN sampling_points sp ON sp.id = ph.point_id
-       WHERE sp.zone_map_id = ?
+       JOIN import_batches ib ON ib.id = ph.import_id
+       WHERE sp.zone_map_id = ? AND ib.status != 'annule'
        ORDER BY ph.point_id ASC, ph.recorded_at ASC`,
       [zoneMapId]
     );
@@ -307,9 +434,10 @@ router.get("/history", async (req, res) => {
         };
       }
       byPoint[r.point_id].series.push({
-        ufc:        r.ufc_after !== null ? Number(r.ufc_after) : null,
-        salmonella: r.salmonella_detected === null ? null : !!r.salmonella_detected,
-        date:       r.recorded_at,
+        ufc:         r.ufc_after !== null ? Number(r.ufc_after) : null,
+        salmonella:  r.salmonella_detected === null ? null : !!r.salmonella_detected,
+        cronobacter: r.cronobacter_detected === null ? null : !!r.cronobacter_detected,
+        date:        r.recorded_at,
       });
     }
 

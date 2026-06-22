@@ -88,13 +88,53 @@ export const pointsAPI = {
 };
 
 // ═══════════════════════════════════════════
+// POINTS EN ATTENTE DE PLACEMENT
+// ═══════════════════════════════════════════
+export const pendingPointsAPI = {
+  getAll: () => request("/pending-points"),
+
+  resolve: (id, zoneMapId) =>
+    request(`/pending-points/${encodeURIComponent(id)}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ zoneMapId }),
+    }),
+
+  dismiss: (id) =>
+    request(`/pending-points/${encodeURIComponent(id)}`, { method: "DELETE" }),
+};
+
+// ═══════════════════════════════════════════
+// ACTIONS CORRECTIVES (CAPA)
+// ═══════════════════════════════════════════
+export const correctiveActionsAPI = {
+  getAll: () => request("/corrective-actions"),
+
+  create: (data) =>
+    request("/corrective-actions", { method: "POST", body: JSON.stringify(data) }),
+
+  close: (id) =>
+    request(`/corrective-actions/${encodeURIComponent(id)}/close`, { method: "POST" }),
+};
+
+// ═══════════════════════════════════════════
+// LOTS DE PRODUCTION (traçabilité minimale)
+// ═══════════════════════════════════════════
+export const productionBatchesAPI = {
+  getAll: () => request("/production-batches"),
+
+  getActiveOn: (date) => request(`/production-batches/active-on?date=${encodeURIComponent(date)}`),
+
+  create: (data) =>
+    request("/production-batches", { method: "POST", body: JSON.stringify(data) }),
+
+  close: (id) =>
+    request(`/production-batches/${encodeURIComponent(id)}/close`, { method: "POST" }),
+};
+
+// ═══════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════
 export const settingsAPI = {
-  getThresholds: () => request("/settings/thresholds"),
-  setThresholds: (data) =>
-    request("/settings/thresholds", { method: "PUT", body: JSON.stringify(data) }),
-
   getSiteInfo: () => request("/settings/site"),
   setSiteInfo: (data) =>
     request("/settings/site", { method: "PUT", body: JSON.stringify(data) }),
@@ -111,6 +151,9 @@ export const labResultsAPI = {
 
   undoImport: (importId) =>
     request(`/lab-results/${encodeURIComponent(importId)}/undo`, { method: "POST" }),
+
+  deleteImport: (importId) =>
+    request(`/lab-results/${encodeURIComponent(importId)}`, { method: "DELETE" }),
 
   getPointHistory: (zoneMapId) =>
     request(`/lab-results/history?zoneMapId=${encodeURIComponent(zoneMapId)}`),

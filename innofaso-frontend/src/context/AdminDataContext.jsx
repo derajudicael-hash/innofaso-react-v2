@@ -20,7 +20,6 @@ const FALLBACK_ZONES = [
   { id: 14, mapId: 'labo_microbiologie', label: 'Labo Microbiologie',        status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
 ];
 
-const FALLBACK_THRESHOLDS = { critical: 50, warning: 40 };
 const FALLBACK_SITE_INFO = {
   name: "Usine Plumpy'Nut La Grâce",
   city: "Ouagadougou",
@@ -43,7 +42,6 @@ const AdminDataContext = createContext(null);
 
 export function AdminDataProvider({ children }) {
   const [zones,      setZones]        = useState(FALLBACK_ZONES);
-  const [thresholds, setThresholdsSt]  = useState(FALLBACK_THRESHOLDS);
   const [siteInfo,   setSiteInfoSt]    = useState(FALLBACK_SITE_INFO);
   const [loading,    setLoading]       = useState(false);
   const [error,      setError]         = useState(null);
@@ -57,13 +55,11 @@ export function AdminDataProvider({ children }) {
     setLoading(true);
     setError(null);
     try {
-      const [z, t, s] = await Promise.all([
+      const [z, s] = await Promise.all([
         zonesAPI.getAll().catch(() => null),
-        settingsAPI.getThresholds().catch(() => null),
         settingsAPI.getSiteInfo().catch(() => null),
       ]);
       if (z) setZones(z);
-      if (t) setThresholdsSt(t);
       if (s) setSiteInfoSt(s);
     } catch (err) {
       // Fallback to static data already set as initial state
@@ -119,21 +115,6 @@ export function AdminDataProvider({ children }) {
     setZones((prev) => prev.filter((z) => z.id !== id));
   };
 
-  // ── THRESHOLDS ──
-  const setThresholds = async (data) => {
-    try {
-      const updated = await settingsAPI.setThresholds(data);
-      setThresholdsSt(updated);
-      const refreshed = await zonesAPI.getAll();
-      setZones(refreshed);
-      return updated;
-    } catch (err) {
-      if (!isNetworkError(err)) throw err;
-      setThresholdsSt(data);
-      return data;
-    }
-  };
-
   // ── SITE INFO ──
   const setSiteInfo = async (data) => {
     try {
@@ -147,7 +128,6 @@ export function AdminDataProvider({ children }) {
   return (
     <AdminDataContext.Provider value={{
       zones, addZone, updateZone, deleteZone,
-      thresholds, setThresholds,
       siteInfo, setSiteInfo,
       loading, error, reload: loadAll,
     }}>
