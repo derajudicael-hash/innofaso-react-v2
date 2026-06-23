@@ -11,6 +11,7 @@ function toFrontend(p) {
     pointType:      p.point_type,
     description:    p.description,
     ufc:            p.ufc !== null && p.ufc !== undefined ? Number(p.ufc) : null,
+    seuil:          p.seuil !== null && p.seuil !== undefined ? Number(p.seuil) : null,
     lastMeasuredAt: p.last_measured_at ?? null,
   };
 }
@@ -34,6 +35,7 @@ function toFrontendPartial(data) {
   if ("point_type" in data)   out.pointType   = data.point_type;
   if ("description" in data)  out.description = data.description;
   if ("ufc" in data)          out.ufc         = data.ufc !== null && data.ufc !== undefined && data.ufc !== "" ? Number(data.ufc) : null;
+  if ("seuil" in data)        out.seuil       = data.seuil !== null && data.seuil !== undefined && data.seuil !== "" ? Number(data.seuil) : null;
   return out;
 }
 

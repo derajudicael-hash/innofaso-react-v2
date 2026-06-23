@@ -117,9 +117,7 @@ export default function AlertsPage() {
                       <p className="acv2-desc">{z.alertDesc}</p>
 
                       <div className="acv2-meta">
-                        <span><Icon name="user"     size={11} strokeWidth={2} /> {z.responsible}</span>
-                        <span><Icon name="calendar" size={11} strokeWidth={2} /> {z.lastCheck}</span>
-                        <span><Icon name="clock"    size={11} strokeWidth={2} /> {z.nextCheck}</span>
+                        <span><Icon name="user" size={11} strokeWidth={2} /> {z.responsible}</span>
                       </div>
 
                       <div className="acv2-progress-wrap">

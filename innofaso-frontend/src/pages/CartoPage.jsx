@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useComputedZones } from "../hooks/useComputedZones";
 import { usePoints } from "../context/PointsContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { usePersistedFiles } from "../map/usePersistedFiles.js";
+import { useMapDisplaySelection } from "../hooks/useMapDisplaySelection.js";
 import { useAuth } from "../context/AuthContext";
 import FactoryMap from "../map/FactoryMap.jsx";
 import MapSidebar from "../map/MapSidebar.jsx";
@@ -15,6 +16,17 @@ export default function CartoPage() {
   const { activeResults, addFile, removeFile, clearAll, fileEntries, activeFileId, setActiveFileId, hydrated } = usePersistedFiles();
   const { computedZones } = useComputedZones(activeResults);
   const { user } = useAuth();
+
+  // Bulletin affiché sur la carte (cf. AdminPage, onglet "Bulletin sur la
+  // carte") : ne filtre que ce qui est montré sur la carte/le détail de
+  // zone — la liste complète (pointsByZone) reste intacte pour l'import.
+  const { allowedIds } = useMapDisplaySelection();
+  const displayedPointsByZone = useMemo(() => {
+    if (!allowedIds) return pointsByZone;
+    return Object.fromEntries(
+      Object.entries(pointsByZone).map(([zoneId, pts]) => [zoneId, pts.filter(p => allowedIds.has(p.id))])
+    );
+  }, [pointsByZone, allowedIds]);
 
   const [selectedZone, setSelectedZone] = useState(null);
   const [selectedPoint, setSelectedPoint] = useState(null);
@@ -222,16 +234,17 @@ export default function CartoPage() {
           <FactoryMap
             results={activeResults}
             backendZones={backendZones}
-            dynamicPoints={pointsByZone}
+            dynamicPoints={displayedPointsByZone}
             selectedZone={selectedZone}
             onSelectZone={zone => { setSelectedZone(zone); setSelectedPoint(null); }}
+            onSelectPoint={(pt, zone) => { setSelectedZone(zone); setSelectedPoint(pt); }}
           />
         </div>
         {selectedZone && (
           <MapSidebar
             zone={selectedZone}
             point={selectedPoint}
-            points={pointsByZone[selectedZone?.id] ?? []}
+            points={displayedPointsByZone[selectedZone?.id] ?? []}
             results={activeResults}
             backendZone={activeBackendZone}
             onClose={() => { setSelectedZone(null); setSelectedPoint(null); }}

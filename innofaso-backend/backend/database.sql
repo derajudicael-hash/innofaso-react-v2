@@ -15,9 +15,8 @@ CREATE TABLE IF NOT EXISTS zones (
   status        ENUM('critical','warning','ok') NOT NULL DEFAULT 'ok',
   ufc           DECIMAL(8,2)  NOT NULL DEFAULT 0,
   seuil         DECIMAL(8,2)  NOT NULL DEFAULT 50,
+  seuil_manual  TINYINT(1)    NOT NULL DEFAULT 0,
   responsible   VARCHAR(100)  NOT NULL DEFAULT '',
-  last_check    VARCHAR(50)   NOT NULL DEFAULT '',
-  next_check    VARCHAR(50)   NOT NULL DEFAULT '',
   alert_cls     VARCHAR(10)   NOT NULL DEFAULT 'good',
   alert_title   VARCHAR(100)  NOT NULL DEFAULT 'Zone conforme',
   alert_desc    TEXT,
@@ -52,12 +51,14 @@ CREATE TABLE IF NOT EXISTS admin_users (
 --  DONNÉES INITIALES
 -- ═══════════════════════════════════════
 
+-- Champs contact (city/country/contact/phone) volontairement vides : ils ne
+-- se remplissent que lorsque l'admin les saisit lui-même dans Paramètres.
 INSERT INTO site_info (key_name, key_value) VALUES
-('name',    'Usine Plumpy-Nut La Grace'),
-('city',    'Ouagadougou'),
-('country', 'Burkina Faso'),
-('contact', 'qualite@lagrace.bf'),
-('phone',   '+226 25 38 00 00')
+('name',    'InnoFaso'),
+('city',    ''),
+('country', ''),
+('contact', ''),
+('phone',   '')
 ON DUPLICATE KEY UPDATE key_value = VALUES(key_value);
 
 INSERT INTO admin_users (username, password, name, role) VALUES
@@ -66,21 +67,21 @@ INSERT INTO admin_users (username, password, name, role) VALUES
 ON DUPLICATE KEY UPDATE password = VALUES(password), name = VALUES(name), role = VALUES(role);
 
 -- ── 14 zones de l'usine (IDs = factory-hygiene zone IDs) ──────────────────
-INSERT INTO zones (map_id, label, status, ufc, seuil, responsible, last_check, next_check, alert_cls, alert_title, alert_desc) VALUES
-('stockage_pf',       'Stockage Produits Finis',  'ok',       85,  500, 'Ouedraogo Paul',    '06/06/2026 06:30', '06/06/2026 14:30', 'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
-('conditionnement',   'Conditionnement',           'ok',        4,   10, 'Sawadogo Marie',    '06/06/2026 06:45', '06/06/2026 14:45', 'good', 'Zone conforme',        'Excellente maîtrise de la contamination.'),
-('melange',           'Mélange',                   'warning',   8,   10, 'Kone Ibrahim',      '06/06/2026 07:00', '06/06/2026 11:00', 'warn', 'Surveillance requise', 'Niveau proche du seuil — renforcer les contrôles.'),
-('premix',            'PreMélange',                'critical', 13,   10, 'Kone Ibrahim',      '06/06/2026 07:15', '06/06/2026 09:15', 'crit', 'Action requise',       'DÉPASSEMENT — arrêter et décontaminer immédiatement.'),
-('pesage',            'Pesage poudres',            'ok',        3,   10, 'Zongo Mariam',      '06/06/2026 07:30', '06/06/2026 15:30', 'good', 'Zone conforme',        'Bon niveau de maîtrise.'),
-('huile',             'Huile et pesage S+A+H',     'warning',   9,   10, 'Kabore Seydou',     '06/06/2026 07:45', '06/06/2026 11:45', 'warn', 'Surveillance requise', 'Niveau élevé — vérifier équipements.'),
-('sas_poudres',       'SAS poudres',               'ok',       45,  100, 'Zongo Mariam',      '06/06/2026 08:00', '06/06/2026 16:00', 'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
-('matieres_premieres','Matières Premières',         'ok',      120,  500, 'Compaore Jean',     '06/06/2026 08:15', '06/06/2026 16:15', 'good', 'Zone conforme',        'Zone grise — contamination maîtrisée.'),
-('laverie',           'Laverie + buanderie',        'ok',      230,  500, 'Traore Amina',      '06/06/2026 08:30', '06/06/2026 16:30', 'good', 'Zone conforme',        'Niveaux normaux pour zone laverie.'),
-('vestiaire_laverie', 'Vestiaire Laverie',          'ok',      180,  500, 'Traore Amina',      '06/06/2026 08:45', '06/06/2026 16:45', 'good', 'Zone conforme',        'Niveaux dans les limites.'),
-('vestiaires_h',      'Vestiaires H',               'ok',      290,  500, 'Ouedraogo Paul',    '06/06/2026 09:00', '06/06/2026 17:00', 'good', 'Zone conforme',        'Niveaux dans les limites.'),
-('vestiaires_visiteur','Vestiaires Visiteur',        'warning', 415,  500, 'Compaore Jean',     '06/06/2026 09:15', '06/06/2026 13:15', 'warn', 'Surveillance requise', 'Niveau élevé — vérifier hygiène visiteurs.'),
-('vestiaires_f',      'Vestiaires F',               'ok',      150,  500, 'Sawadogo Marie',    '06/06/2026 09:30', '06/06/2026 17:30', 'good', 'Zone conforme',        'Niveaux dans les limites.'),
-('labo_microbiologie','Labo Microbiologie',         'ok',        0,  500, 'Zongo Mariam',      '06/06/2026 09:45', '06/06/2026 17:45', 'good', 'Zone conforme',        'Niveaux dans les limites.');
+INSERT INTO zones (map_id, label, status, ufc, seuil, responsible, alert_cls, alert_title, alert_desc) VALUES
+('stockage_pf',       'Stockage Produits Finis',  'ok',       85,  500, 'Ouedraogo Paul',    'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
+('conditionnement',   'Conditionnement',           'ok',        4,   10, 'Sawadogo Marie',    'good', 'Zone conforme',        'Excellente maîtrise de la contamination.'),
+('melange',           'Mélange',                   'warning',   8,   10, 'Kone Ibrahim',      'warn', 'Surveillance requise', 'Niveau proche du seuil — renforcer les contrôles.'),
+('premix',            'PreMélange',                'critical', 13,   10, 'Kone Ibrahim',      'crit', 'Action requise',       'DÉPASSEMENT — arrêter et décontaminer immédiatement.'),
+('pesage',            'Pesage poudres',            'ok',        3,   10, 'Zongo Mariam',      'good', 'Zone conforme',        'Bon niveau de maîtrise.'),
+('huile',             'Huile et pesage S+A+H',     'warning',   9,   10, 'Kabore Seydou',     'warn', 'Surveillance requise', 'Niveau élevé — vérifier équipements.'),
+('sas_poudres',       'SAS poudres',               'ok',       45,  100, 'Zongo Mariam',      'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
+('matieres_premieres','Matières Premières',         'ok',      120,  500, 'Compaore Jean',     'good', 'Zone conforme',        'Zone grise — contamination maîtrisée.'),
+('laverie',           'Laverie + buanderie',        'ok',      230,  500, 'Traore Amina',      'good', 'Zone conforme',        'Niveaux normaux pour zone laverie.'),
+('vestiaire_laverie', 'Vestiaire Laverie',          'ok',      180,  500, 'Traore Amina',      'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('vestiaires_h',      'Vestiaires H',               'ok',      290,  500, 'Ouedraogo Paul',    'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('vestiaires_visiteur','Vestiaires Visiteur',        'warning', 415,  500, 'Compaore Jean',     'warn', 'Surveillance requise', 'Niveau élevé — vérifier hygiène visiteurs.'),
+('vestiaires_f',      'Vestiaires F',               'ok',      150,  500, 'Sawadogo Marie',    'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('labo_microbiologie','Labo Microbiologie',         'ok',        0,  500, 'Zongo Mariam',      'good', 'Zone conforme',        'Niveaux dans les limites.');
 
 -- ── Points de prélèvement ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sampling_points (
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS sampling_points (
   point_type  CHAR(1)       NOT NULL DEFAULT '1',
   description VARCHAR(255)  NOT NULL DEFAULT '',
   ufc         DECIMAL(8,2)  DEFAULT NULL,
+  seuil       DECIMAL(8,2)  DEFAULT NULL,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -179,6 +181,7 @@ CREATE TABLE IF NOT EXISTS pending_points (
   point_type          CHAR(1)       NULL,
   description          VARCHAR(255)  NOT NULL DEFAULT '',
   ufc                  DECIMAL(8,2)  NULL,
+  seuil                DECIMAL(8,2)  NULL,
   salmonella_detected  TINYINT(1)    NULL,
   cronobacter_detected TINYINT(1)    NULL,
   import_id            INT           NULL,
@@ -186,41 +189,6 @@ CREATE TABLE IF NOT EXISTS pending_points (
   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (import_id) REFERENCES import_batches(id) ON DELETE CASCADE,
   INDEX idx_point (point_id)
-);
-
--- ── Actions correctives (CAPA minimal) ──────────────────────────────────
--- Une non-conformité (point critique/surveillance) doit pouvoir être suivie
--- jusqu'à sa résolution : responsable assigné, échéance, statut. Sans cette
--- table, un dépassement de seuil n'est qu'une couleur sur la carte, sans
--- aucune trace de la décision/action prise pour le corriger.
-CREATE TABLE IF NOT EXISTS corrective_actions (
-  id           INT AUTO_INCREMENT PRIMARY KEY,
-  point_id     VARCHAR(20)   NOT NULL,
-  description  VARCHAR(500)  NOT NULL,
-  responsible  VARCHAR(100)  NOT NULL,
-  due_date     DATE          NULL,
-  status       ENUM('ouverte','fermee') NOT NULL DEFAULT 'ouverte',
-  opened_by    VARCHAR(100)  NOT NULL,
-  opened_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  closed_by    VARCHAR(100)  NULL,
-  closed_at    TIMESTAMP     NULL DEFAULT NULL,
-  FOREIGN KEY (point_id) REFERENCES sampling_points(id),
-  INDEX idx_status (status),
-  INDEX idx_point (point_id)
-);
-
--- ── Lots de production (traçabilité minimale) ───────────────────────────
--- La surveillance environnementale sert normalement à statuer sur les lots
--- produits pendant la période contaminée (décision de libération/rappel).
--- Sans cette table, le système ne peut répondre à "quels lots étaient en
--- production quand telle zone était contaminée ?".
-CREATE TABLE IF NOT EXISTS production_batches (
-  id          INT AUTO_INCREMENT PRIMARY KEY,
-  reference   VARCHAR(100) NOT NULL UNIQUE,
-  date_start  DATE         NOT NULL,
-  date_end    DATE         NULL,
-  created_by  VARCHAR(100) NOT NULL,
-  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ── Historique 7 jours ───────────────────────────────────────────────────

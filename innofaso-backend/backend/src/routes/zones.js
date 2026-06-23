@@ -1,22 +1,9 @@
 const express = require("express");
 const db      = require("../db");
 const auth    = require("../middleware/auth");
+const { recomputeZoneSeuil, computeStatus, ALERT_MAP } = require("../lib/recomputeZone");
 
 const router = express.Router();
-
-// Compute status from ufc vs zone's own seuil
-function computeStatus(ufc, seuil) {
-  const s = Number(seuil) || 50;
-  if (ufc >= s)       return "critical";
-  if (ufc >= s * 0.8) return "warning";
-  return "ok";
-}
-
-const ALERT_MAP = {
-  critical: { alert_cls: "crit", alert_title: "Action requise",      alert_desc: "Niveau de contamination critique – Action immédiate requise" },
-  warning:  { alert_cls: "warn", alert_title: "Surveillance requise", alert_desc: "Niveau proche du seuil – Surveiller l'évolution de près" },
-  ok:       { alert_cls: "good", alert_title: "Zone conforme",        alert_desc: "Niveaux de contamination dans les limites acceptables" },
-};
 
 // ─────────────────────────────────────────────
 // HELPER — format a DB row to frontend shape
@@ -30,9 +17,8 @@ function formatZone(z, historyByZone) {
     status:      z.status,
     ufc:         Number(z.ufc),
     seuil:       Number(z.seuil),
+    seuilManual: !!z.seuil_manual,
     responsible: z.responsible,
-    lastCheck:   z.last_check,
-    nextCheck:   z.next_check,
     alertCls:    z.alert_cls,
     alertTitle:  z.alert_title,
     alertDesc:   z.alert_desc,
@@ -79,7 +65,7 @@ router.get("/", async (req, res) => {
 // POST /api/zones  — créer une zone (tout compte connecté : superadmin ou éditeur)
 // ─────────────────────────────────────────────
 router.post("/", auth, async (req, res) => {
-  const { label, ufc, seuil, responsible, lastCheck, nextCheck, mapId } = req.body;
+  const { label, ufc, seuil, responsible, mapId } = req.body;
   if (!label || ufc === undefined) {
     return res.status(400).json({ error: "label et ufc sont requis." });
   }
@@ -90,13 +76,11 @@ router.post("/", auth, async (req, res) => {
     const alertInfo = ALERT_MAP[status];
 
     const [result] = await db.query(
-      `INSERT INTO zones (label, map_id, status, ufc, seuil, responsible, last_check, next_check, alert_cls, alert_title, alert_desc)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO zones (label, map_id, status, ufc, seuil, responsible, alert_cls, alert_title, alert_desc)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         label, mapId ?? null, status, numUfc, seuil ?? 50,
         responsible ?? "Non assigné",
-        lastCheck   ?? new Date().toLocaleDateString("fr-FR"),
-        nextCheck   ?? "—",
         alertInfo.alert_cls, alertInfo.alert_title, alertInfo.alert_desc,
       ]
     );
@@ -114,9 +98,8 @@ router.post("/", auth, async (req, res) => {
     const z = rows[0];
     res.status(201).json({
       id: String(z.id), mapId: z.map_id || null, label: z.label, status: z.status,
-      ufc: Number(z.ufc), seuil: Number(z.seuil),
-      responsible: z.responsible, lastCheck: z.last_check,
-      nextCheck: z.next_check, alertCls: z.alert_cls,
+      ufc: Number(z.ufc), seuil: Number(z.seuil), seuilManual: !!z.seuil_manual,
+      responsible: z.responsible, alertCls: z.alert_cls,
       alertTitle: z.alert_title, alertDesc: z.alert_desc,
       history: [numUfc],
     });
@@ -129,24 +112,30 @@ router.post("/", auth, async (req, res) => {
 // ─────────────────────────────────────────────
 // PUT /api/zones/:id  — modifier une zone (tout compte connecté : superadmin ou éditeur)
 // ─────────────────────────────────────────────
+// seuilManual (booléen, optionnel) : envoyé uniquement quand l'admin vient
+// de confirmer (ou d'annuler) un changement manuel de seuil — cf.
+// ZonesTab. Absent lors d'une modification normale (responsable, libellé) :
+// le statut seuil_manual de la zone n'est alors pas modifié.
 router.put("/:id", auth, async (req, res) => {
   const { id } = req.params;
-  const { label, ufc, seuil, responsible, lastCheck, nextCheck } = req.body;
+  const { label, ufc, seuil, responsible, seuilManual } = req.body;
 
   try {
     const numUfc    = Number(ufc);
     const status    = computeStatus(numUfc, seuil ?? 50);
     const alertInfo = ALERT_MAP[status];
+    const setManual = typeof seuilManual === "boolean";
 
     const [updateResult] = await db.query(
       `UPDATE zones SET
         label = ?, status = ?, ufc = ?, seuil = ?,
-        responsible = ?, last_check = ?, next_check = ?,
-        alert_cls = ?, alert_title = ?, alert_desc = ?
+        ${setManual ? "seuil_manual = ?," : ""}
+        responsible = ?, alert_cls = ?, alert_title = ?, alert_desc = ?
        WHERE id = ?`,
       [
         label, status, numUfc, seuil ?? 50,
-        responsible, lastCheck, nextCheck,
+        ...(setManual ? [seuilManual ? 1 : 0] : []),
+        responsible,
         alertInfo.alert_cls, alertInfo.alert_title, alertInfo.alert_desc,
         id,
       ]
@@ -173,14 +162,37 @@ router.put("/:id", auth, async (req, res) => {
     const z = rows[0];
     res.json({
       id: String(z.id), mapId: z.map_id || null, label: z.label, status: z.status,
-      ufc: Number(z.ufc), seuil: Number(z.seuil),
-      responsible: z.responsible, lastCheck: z.last_check,
-      nextCheck: z.next_check, alertCls: z.alert_cls,
+      ufc: Number(z.ufc), seuil: Number(z.seuil), seuilManual: !!z.seuil_manual,
+      responsible: z.responsible, alertCls: z.alert_cls,
       alertTitle: z.alert_title, alertDesc: z.alert_desc,
       history: h.map((r) => Number(r.ufc)).reverse(),
     });
   } catch (err) {
     console.error("PUT /zones/:id error:", err);
+    res.status(500).json({ error: "Erreur serveur." });
+  }
+});
+
+// ─────────────────────────────────────────────
+// POST /api/zones/:id/seuil/auto — repasse le seuil de la zone en mode
+// automatique (le bulletin redevient maître) et le recalcule immédiatement
+// à partir du seuil le plus strict parmi ses points.
+// ─────────────────────────────────────────────
+router.post("/:id/seuil/auto", auth, async (req, res) => {
+  try {
+    const [[zone]] = await db.query("SELECT * FROM zones WHERE id = ?", [req.params.id]);
+    if (!zone) return res.status(404).json({ error: "Zone introuvable." });
+
+    await db.query("UPDATE zones SET seuil_manual = 0 WHERE id = ?", [zone.id]);
+    if (zone.map_id) await recomputeZoneSeuil(zone.map_id);
+
+    const [[updated]] = await db.query("SELECT * FROM zones WHERE id = ?", [zone.id]);
+    res.json({
+      id: String(updated.id), mapId: updated.map_id || null,
+      seuil: Number(updated.seuil), seuilManual: !!updated.seuil_manual,
+    });
+  } catch (err) {
+    console.error("POST /zones/:id/seuil/auto error:", err);
     res.status(500).json({ error: "Erreur serveur." });
   }
 });

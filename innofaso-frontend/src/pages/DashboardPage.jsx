@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { usePoints }         from "../context/PointsContext";
 import { useComputedZones }  from "../hooks/useComputedZones";
 import { usePersistedFiles } from "../map/usePersistedFiles.js";
+import { useMapDisplaySelection } from "../hooks/useMapDisplaySelection.js";
 import KpiCard       from "../components/KpiCard";
 import ChartSection  from "../components/ChartSection";
 import KpiModal      from "../components/KpiModal";
@@ -56,9 +57,22 @@ export const KPI_DETAILS = {
 };
 
 export default function DashboardPage() {
-  const { pointsByZone } = usePoints();
+  const { pointsByZone: allPointsByZone } = usePoints();
   const { activeResults } = usePersistedFiles();
   const { computedZones, loading, error } = useComputedZones(activeResults);
+
+  // Bulletin affiché sur la carte (cf. AdminPage, onglet "Bulletin sur la
+  // carte") : par défaut tous les points connus apparaissent ; si l'admin a
+  // choisi de revoir un bulletin précédent, seuls ses points restent visibles.
+  const { allowedIds } = useMapDisplaySelection();
+  const pointsByZone = useMemo(() => {
+    if (!allowedIds) return allPointsByZone;
+    const out = {};
+    for (const [zoneId, pts] of Object.entries(allPointsByZone)) {
+      out[zoneId] = pts.filter(p => allowedIds.has(p.id));
+    }
+    return out;
+  }, [allPointsByZone, allowedIds]);
 
   const [selectedMapZone, setSelectedMapZone] = useState(null);
   const [selectedPoint,   setSelectedPoint]   = useState(null);
@@ -179,6 +193,7 @@ export default function DashboardPage() {
                   dynamicPoints={pointsByZone}
                   selectedZone={selectedMapZone}
                   onSelectZone={zone => { setSelectedMapZone(zone); setSelectedPoint(null); }}
+                  onSelectPoint={(pt, zone) => { setSelectedMapZone(zone); setSelectedPoint(pt); }}
                 />
               </div>
             </div>

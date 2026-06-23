@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { useComputedZones, TYPE_SEUIL } from "../hooks/useComputedZones";
+import { useComputedZones } from "../hooks/useComputedZones";
 import { usePointHistory, buildSeriesFromRaw } from "../hooks/usePointHistory";
+import { useMapDisplaySelection } from "../hooks/useMapDisplaySelection.js";
 import { useAuth } from "../context/AuthContext";
 import { labResultsAPI } from "../services/api.js";
 import { exportHistoryToDocx } from "../utils/exportHistoryDocx.js";
@@ -15,6 +16,35 @@ function statusOf(ufc, seuil) {
 }
 
 const STATUS_LABEL = { critical: "Critique", warning: "Surveillance", ok: "Conforme" };
+
+const DURATION_OPTIONS = [
+  { value: 1,  label: "1 jour" },
+  { value: 7,  label: "7 jours" },
+  { value: 30, label: "30 jours" },
+  { value: 90, label: "3 mois" },
+];
+
+// Filtre les relevés d'une série (champ "points" pour les points fixes,
+// "series" pour les points aléatoires) à la fenêtre de durée choisie par
+// l'utilisateur — appliqué aussi bien à l'affichage qu'aux exports, pour que
+// le rapport téléchargé corresponde toujours à ce qui est affiché à l'écran.
+//
+// Ancré sur "aujourd'hui" (Date.now()), volontairement — PAS sur le dernier
+// relevé connu. "30 derniers jours" doit toujours désigner les 30 derniers
+// jours réels : si la surveillance s'arrête pendant 2 mois, la page doit
+// clairement se vider plutôt que de réafficher une vieille courbe comme si
+// tout était à jour. Un ancrage sur les données masquerait silencieusement
+// un arrêt de surveillance — inacceptable pour un outil de sécurité
+// alimentaire. Si une bonne raison existe de revoir un bulletin ancien, c'est
+// le rôle du réglage "Bulletin affiché sur la carte" (choix explicite), pas
+// celui de ce filtre.
+function filterSeriesByDuration(series, days, field = "points") {
+  const cutoff = Date.now() - days * 86400000;
+  return series.map((s) => ({
+    ...s,
+    [field]: (s[field] || []).filter((p) => new Date(p.date).getTime() >= cutoff),
+  }));
+}
 
 function fmtDateFull(d) {
   const dd = new Date(d);
@@ -45,7 +75,28 @@ export default function HistoryPage() {
   const zone = useMemo(() => zones.find((z) => z.id === selectedId) || zones[0] || null, [zones, selectedId]);
 
   // Courbes par point (Phase 1) + points aléatoires distincts (Phase 2), réelles depuis le backend
-  const { series, randomPoints, loading: histLoading, reload: reloadHistory } = usePointHistory(zone?.mapId);
+  const { series: rawSeries, randomPoints: rawRandomPoints, loading: histLoading, reload: reloadHistory } = usePointHistory(zone?.mapId);
+
+  // Bulletin affiché (cf. AdminPage, onglet "Bulletin sur la carte") — "partout
+  // sur l'écran", donc aussi ici. Quand un bulletin précis est choisi, on
+  // n'affiche que SES points (mais leur historique complet, pas un seul
+  // relevé) — et le filtre de durée n'a alors plus de sens (un bulletin
+  // ancien choisi exprès serait sinon masqué par la fenêtre récente) : il
+  // est ignoré tant que le choix n'est pas "Automatique".
+  const { allowedIds } = useMapDisplaySelection();
+  const seriesInBulletin       = useMemo(() => allowedIds ? rawSeries.filter((s) => allowedIds.has(s.pointId)) : rawSeries, [rawSeries, allowedIds]);
+  const randomPointsInBulletin = useMemo(() => allowedIds ? rawRandomPoints.filter((s) => allowedIds.has(s.pointId)) : rawRandomPoints, [rawRandomPoints, allowedIds]);
+
+  // Fenêtre de durée affichée (et exportée) — 1 jour / 7 jours / 30 jours / 3 mois.
+  const [durationDays, setDurationDays] = useState(30);
+  const series = useMemo(
+    () => allowedIds ? seriesInBulletin : filterSeriesByDuration(seriesInBulletin, durationDays, "points"),
+    [seriesInBulletin, durationDays, allowedIds]
+  );
+  const randomPoints = useMemo(
+    () => (allowedIds ? randomPointsInBulletin : filterSeriesByDuration(randomPointsInBulletin, durationDays, "series")).filter((rp) => rp.series.length > 0),
+    [randomPointsInBulletin, durationDays, allowedIds]
+  );
 
   // Checkboxes de visibilité par point — toutes cochées par défaut, réinitialisées au changement de zone
   const [hiddenIds, setHiddenIds] = useState(() => new Set());
@@ -63,8 +114,7 @@ export default function HistoryPage() {
   const allPointsFlat = useMemo(() => {
     return series
       .flatMap((s) => (s.points || []).map((p) => ({
-        ...p, pointId: s.pointId, label: s.label,
-        seuil: TYPE_SEUIL[s.pointType] ?? seuil,
+        ...p, pointId: s.pointId, label: s.label, seuil,
       })))
       .filter((p) => p.ufc !== null && p.ufc !== undefined)
       .sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -155,8 +205,22 @@ export default function HistoryPage() {
     const zonesData = [];
     for (const z of zones) {
       const raw = await labResultsAPI.getPointHistory(z.mapId);
-      const { series: s, randomPoints: rp } = buildSeriesFromRaw(raw);
-      zonesData.push({ zone: { label: z.label }, series: s, randomPoints: rp, seuil: z.worstSeuil ?? z.seuil ?? 50 });
+      const { series: rawS, randomPoints: rawRp } = buildSeriesFromRaw(raw);
+      // Même règles que l'écran : un bulletin précis choisi ("Bulletin sur la
+      // carte") restreint aux points qu'il a rapportés et ignore le filtre de
+      // durée ; sinon, même fenêtre de durée que celle affichée à l'écran
+      // (ancrée sur aujourd'hui), pour que le rapport téléchargé corresponde
+      // toujours à ce que l'admin a sous les yeux.
+      const inBulletinS  = allowedIds ? rawS.filter((x) => allowedIds.has(x.pointId)) : rawS;
+      const inBulletinRp = allowedIds ? rawRp.filter((x) => allowedIds.has(x.pointId)) : rawRp;
+      const s  = allowedIds ? inBulletinS : filterSeriesByDuration(inBulletinS, durationDays, "points");
+      const rp = (allowedIds ? inBulletinRp : filterSeriesByDuration(inBulletinRp, durationDays, "series")).filter((r) => r.series.length > 0);
+      const zoneSeuil = z.worstSeuil ?? z.seuil ?? 50;
+      // Le seuil est désormais le même pour tous les points d'une zone — on
+      // l'attache à chaque point pour les exports qui regroupent autrement
+      // que par zone (ex. l'Excel, qui regroupe par Environnement).
+      const seuiled = (arr) => arr.map((p) => ({ ...p, seuil: zoneSeuil }));
+      zonesData.push({ zone: { label: z.label }, series: seuiled(s), randomPoints: seuiled(rp), seuil: zoneSeuil });
     }
     return zonesData;
   };
@@ -243,7 +307,26 @@ export default function HistoryPage() {
             <option key={z.id} value={z.id}>{z.label}</option>
           ))}
         </select>
+
+        <div className="history-duration-group" title={allowedIds ? "Filtre de durée ignoré tant qu'un bulletin précis est choisi" : undefined}>
+          {DURATION_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={`history-duration-btn${durationDays === opt.value ? " history-duration-btn--active" : ""}`}
+              disabled={!!allowedIds}
+              onClick={() => setDurationDays(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {allowedIds && (
+        <div className="pts-notice pts-notice--warning" style={{ marginBottom: 12 }}>
+          <span>⚠️ Un bulletin précis est choisi comme affichage ("Bulletin sur la carte", dans Administration) — seuls ses points apparaissent ici, et le filtre de durée est ignoré. Repassez en "Automatique" pour revenir à l'affichage normal.</span>
+        </div>
+      )}
 
       {!zone ? (
         <div className="dash-loading">Aucune zone disponible.</div>
@@ -252,12 +335,12 @@ export default function HistoryPage() {
       ) : series.length === 0 && randomPoints.length === 0 ? (
         <div className="panel" style={{ padding: "44px 24px", textAlign: "center" }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", marginBottom: 8 }}>
-            Aucun relevé pour « {zone.label} » sur les 30 derniers jours
+            Aucun relevé pour « {zone.label} » sur {DURATION_OPTIONS.find((o) => o.value === durationDays)?.label}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--txt3)", lineHeight: 1.7, maxWidth: 460, margin: "0 auto" }}>
             L'historique affiche uniquement les vraies données issues des bulletins d'analyse
-            importés depuis la Cartographie. Importez un bulletin couvrant un ou plusieurs points
-            de cette zone pour voir apparaître son évolution ici.
+            importés depuis la Cartographie. Essayez une fenêtre plus large (ex. 3 mois), ou
+            importez un bulletin couvrant un ou plusieurs points de cette zone.
           </div>
         </div>
       ) : (

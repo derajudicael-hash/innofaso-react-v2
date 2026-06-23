@@ -1,5 +1,5 @@
 const db = require("../db");
-const { recomputeZone } = require("./recomputeZone");
+const { recomputeZone, recomputeZoneSeuil } = require("./recomputeZone");
 
 // ─────────────────────────────────────────────
 // Identifiants de points "E.S.N" (Environnement.Salle.N°) tels que rapportés
@@ -136,26 +136,74 @@ async function queuePending({ pointId, room, pointType, description, ufc, salmon
 }
 
 // ─────────────────────────────────────────────
-// Position d'un point nouvellement créé : la carte (géométrie des zones) ne
-// vit que côté frontend (factoryData.js), donc on place le nouveau point près
-// du centroïde de ses futurs voisins déjà connus dans la même zone, en
-// éventail pour éviter d'empiler plusieurs points au même endroit.
+// Géométrie des 14 zones du plan d'usine — copie de innofaso-frontend/src/
+// map/factoryData.js (ZONES). Le plan ne vit que côté frontend, mais le
+// backend a besoin de ces rectangles pour placer un nouveau point DANS la
+// bonne zone (cf. bug ci-dessous) ; le bâtiment ne change pas, donc cette
+// duplication reste raisonnable. Si le plan est redessiné, répercuter ici.
+// ─────────────────────────────────────────────
+const ZONE_GEOMETRY = {
+  stockage_pf:         { x: 0,    y: 4.3,  width: 22.3, height: 73.3 },
+  conditionnement:     { x: 22.3, y: 10.2, width: 20.7, height: 67.4 },
+  melange:             { x: 43.0, y: 16.3, width: 13.1, height: 51.3 },
+  premix:              { x: 56.1, y: 4.3,  width: 16.2, height: 47.3 },
+  pesage:              { x: 56.1, y: 51.6, width: 16.2, height: 26 },
+  huile:               { x: 72.3, y: 10.2, width: 11.5, height: 47.4 },
+  sas_poudres:         { x: 72.3, y: 57.6, width: 11.5, height: 20 },
+  matieres_premieres:  { x: 88.6, y: 4.3,  width: 11.4, height: 73.3 },
+  laverie:             { x: 22.3, y: 77.6, width: 20.7, height: 22.4 },
+  vestiaire_laverie:   { x: 0,    y: 77.6, width: 22.3, height: 22.4 },
+  vestiaires_h:        { x: 43.0, y: 77.6, width: 13.1, height: 22.4 },
+  vestiaires_visiteur: { x: 56.1, y: 77.6, width: 13.1, height: 22.4 },
+  vestiaires_f:        { x: 69.2, y: 77.6, width: 14.6, height: 22.4 },
+  labo_microbiologie:  { x: 83.8, y: 77.6, width: 5.0,  height: 22.4 },
+};
+
+// ─────────────────────────────────────────────
+// Position d'un point nouvellement créé, en éventail autour de ses voisins
+// déjà connus dans la même zone pour ne pas s'empiler.
+//
+// BUG corrigé (juin 2026) : le repli "aucun voisin encore" renvoyait (50,50)
+// — un pourcentage du plan ENTIER, pas de la zone. Comme (50,50) tombe par
+// pure coïncidence géométrique dans le rectangle de la zone "Mélange", TOUS
+// les nouveaux points de TOUTES les zones (dès qu'une zone démarrait vide)
+// s'affichaient visuellement empilés dans Mélange, quelle que soit leur
+// vraie zone en base. Le repli — et le rayon de l'éventail — doivent donc
+// être bornés au rectangle de LA zone elle-même (cf. ZONE_GEOMETRY).
 // ─────────────────────────────────────────────
 async function computeNewPointPosition(zoneMapId) {
+  const geo = ZONE_GEOMETRY[zoneMapId] ?? null;
+  const fallbackCx = geo ? geo.x + geo.width / 2 : 50;
+  const fallbackCy = geo ? geo.y + geo.height / 2 : 50;
+
   const [siblings] = await db.query(
     "SELECT x, y FROM sampling_points WHERE zone_map_id = ?",
     [zoneMapId]
   );
-  if (siblings.length === 0) return { x: 50, y: 50 };
+  if (siblings.length === 0) {
+    return { x: Number(fallbackCx.toFixed(1)), y: Number(fallbackCy.toFixed(1)) };
+  }
 
   const cx = siblings.reduce((s, p) => s + Number(p.x), 0) / siblings.length;
   const cy = siblings.reduce((s, p) => s + Number(p.y), 0) / siblings.length;
 
   const idx = siblings.length;
   const angle = (idx % 8) * (Math.PI / 4);
-  const radius = 3 + Math.floor(idx / 8) * 2;
-  const x = Math.min(99, Math.max(1, cx + radius * Math.cos(angle)));
-  const y = Math.min(99, Math.max(1, cy + radius * Math.sin(angle)));
+  // Rayon borné à la moitié de la plus petite dimension de la zone, pour ne
+  // jamais déborder dans une zone voisine sur une petite zone (ex. Labo
+  // Microbiologie, 5% de large) — sinon le même bug réapparaît en plus subtil.
+  const maxRadius = geo ? Math.min(geo.width, geo.height) / 2.5 : 5;
+  const radius = Math.min(maxRadius, 3 + Math.floor(idx / 8) * 2);
+  let x = cx + radius * Math.cos(angle);
+  let y = cy + radius * Math.sin(angle);
+
+  if (geo) {
+    x = Math.min(geo.x + geo.width - 0.5, Math.max(geo.x + 0.5, x));
+    y = Math.min(geo.y + geo.height - 0.5, Math.max(geo.y + 0.5, y));
+  } else {
+    x = Math.min(99, Math.max(1, x));
+    y = Math.min(99, Math.max(1, y));
+  }
   return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) };
 }
 
@@ -173,8 +221,8 @@ async function placePendingPoint(row, zoneMapId) {
   const pos = await computeNewPointPosition(zoneMapId);
   try {
     await db.query(
-      "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
-      [row.point_id, zoneMapId, row.point_id, pos.x, pos.y, row.point_type || "1", row.description || "", row.ufc]
+      "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc, seuil) VALUES (?,?,?,?,?,?,?,?,?)",
+      [row.point_id, zoneMapId, row.point_id, pos.x, pos.y, row.point_type || "1", row.description || "", row.ufc, row.seuil ?? null]
     );
   } catch (err) {
     if (err.code !== "ER_DUP_ENTRY") throw err;
@@ -196,6 +244,7 @@ async function placePendingPoint(row, zoneMapId) {
     );
   }
 
+  await recomputeZoneSeuil(zoneMapId);
   await recomputeZone(zoneMapId);
 }
 

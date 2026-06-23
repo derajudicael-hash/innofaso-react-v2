@@ -29,11 +29,14 @@ const ZONE_TYPE_LABEL = {
   laverie: 'Zone Laverie',
   external: 'Zone Périphérique',
 };
+// Le chiffre devant l'ID classe le point par type de surface — le seuil
+// applicable n'en dépend plus : il suit désormais la zone/le bulletin
+// (cf. point.seuil, affiché dans "Spécifications réglementaires" ci-dessous).
 const POINT_TYPE_DESC = {
-  '1': '1.x.x — Surface en contact produit (seuil <10 UFC/cm²)',
-  '2': '2.x.x — Surface à proximité (seuil <50 UFC/cm²)',
-  '3': '3.x.x — Surface support / sol / mur (seuil <100 UFC/cm²)',
-  '4': '4.x.x — Points hors zone blanche (seuil <500 UFC/cm²)',
+  '1': '1.x.x — Surface en contact produit',
+  '2': '2.x.x — Surface à proximité',
+  '3': '3.x.x — Surface support / sol / mur',
+  '4': '4.x.x — Points hors zone blanche',
 };
 
 function ResultBlock({ result }) {
@@ -217,10 +220,11 @@ export default function MapSidebar({ zone, point, results, backendZone, onClose,
             <div style={{ ...s.card, marginTop: 8 }}>
               <div style={s.label}>Spécifications réglementaires</div>
               <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.7 }}>
-                {point.pointType === '1' && 'EB < 10 UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²'}
-                {point.pointType === '2' && 'EB < 50 UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²'}
-                {point.pointType === '3' && 'EB < 100 UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²'}
-                {point.pointType === '4' && 'EB < 500 UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²'}
+                {(() => {
+                  const seuil = point.seuil ?? backendZone?.seuil ?? null;
+                  if (seuil === null) return 'Seuil non encore défini — sera fixé par le prochain bulletin importé pour ce point.';
+                  return `EB < ${seuil} UFC/cm² · Salmonelles : absence/cm² · Cronobacter : absence/cm²`;
+                })()}
               </div>
             </div>
           </div>

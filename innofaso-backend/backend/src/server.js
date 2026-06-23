@@ -56,6 +56,31 @@ const ID_RENAMES = [
     } catch (e) {
       if (!e.message.includes("Duplicate column")) console.warn("ALTER ufc:", e.message);
     }
+    // Seuil propre au point, extrait de la colonne "Spécifications" du bulletin
+    // (cf. lib/recomputeZone.js) — alimente automatiquement le seuil de la
+    // zone tant que l'admin ne l'a pas fixé à la main (zones.seuil_manual).
+    try {
+      await db.query("ALTER TABLE sampling_points ADD COLUMN seuil DECIMAL(8,2) DEFAULT NULL");
+    } catch (e) {
+      if (!e.message.includes("Duplicate column")) console.warn("ALTER sampling_points.seuil:", e.message);
+    }
+    try {
+      await db.query("ALTER TABLE zones ADD COLUMN seuil_manual TINYINT(1) NOT NULL DEFAULT 0");
+    } catch (e) {
+      if (!e.message.includes("Duplicate column")) console.warn("ALTER zones.seuil_manual:", e.message);
+    }
+    // "Dernier contrôle"/"Prochain contrôle" : champs de saisie libre sans
+    // logique réelle derrière — retirés (juin 2026).
+    try {
+      await db.query("ALTER TABLE zones DROP COLUMN last_check");
+    } catch (e) {
+      if (!e.message.includes("check that it exists")) console.warn("DROP zones.last_check:", e.message);
+    }
+    try {
+      await db.query("ALTER TABLE zones DROP COLUMN next_check");
+    } catch (e) {
+      if (!e.message.includes("check that it exists")) console.warn("DROP zones.next_check:", e.message);
+    }
     // Migration : renomme les anciens IDs à suffixe a/b vers l'ID nu attendu par les bulletins.
     // Idempotent : si l'ID cible existe déjà (déjà migré) ou si la source n'existe plus, on ignore.
     for (const r of ID_RENAMES) {
@@ -164,6 +189,11 @@ const ID_RENAMES = [
     } catch (e) {
       if (!e.message.includes("Duplicate column")) console.warn("ALTER pending_points.cronobacter_detected:", e.message);
     }
+    try {
+      await db.query("ALTER TABLE pending_points ADD COLUMN seuil DECIMAL(8,2) DEFAULT NULL");
+    } catch (e) {
+      if (!e.message.includes("Duplicate column")) console.warn("ALTER pending_points.seuil:", e.message);
+    }
 
     const ROOM_ZONE_SEED = [
       [1, 'pesage'], [2, 'melange'], [3, 'huile'], [4, 'premix'],
@@ -197,38 +227,11 @@ const ID_RENAMES = [
       console.log(`✅  ${autoResolved} point(s) en attente résolu(s) automatiquement (salle/mots-clés).`);
     }
 
-    // Actions correctives (CAPA minimal) — suivi d'une non-conformité jusqu'à
-    // sa résolution (responsable, échéance, statut).
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS corrective_actions (
-        id           INT AUTO_INCREMENT PRIMARY KEY,
-        point_id     VARCHAR(20)   NOT NULL,
-        description  VARCHAR(500)  NOT NULL,
-        responsible  VARCHAR(100)  NOT NULL,
-        due_date     DATE          NULL,
-        status       ENUM('ouverte','fermee') NOT NULL DEFAULT 'ouverte',
-        opened_by    VARCHAR(100)  NOT NULL,
-        opened_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        closed_by    VARCHAR(100)  NULL,
-        closed_at    TIMESTAMP     NULL DEFAULT NULL,
-        FOREIGN KEY (point_id) REFERENCES sampling_points(id),
-        INDEX idx_status (status),
-        INDEX idx_point (point_id)
-      )
-    `);
-
-    // Lots de production (traçabilité minimale) — voir quels lots étaient en
-    // production pendant une période de contamination.
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS production_batches (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        reference   VARCHAR(100) NOT NULL UNIQUE,
-        date_start  DATE         NOT NULL,
-        date_end    DATE         NULL,
-        created_by  VARCHAR(100) NOT NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+    // Fonctionnalités abandonnées (juin 2026) : actions correctives et lots
+    // de production — suppression définitive des tables si elles existent
+    // encore d'un démarrage précédent.
+    await db.query("DROP TABLE IF EXISTS corrective_actions");
+    await db.query("DROP TABLE IF EXISTS production_batches");
 
     // Seed des zones basées sur les zones carte (une par zone physique)
     // Seuils conformes NF EN ISO 18593 / EC 2073/2005 :
@@ -253,22 +256,55 @@ const ID_RENAMES = [
       { map_id: 'vestiaires_f',        label: 'Vestiaires F',             seuil: 500 }, // type 4 uniquement
       { map_id: 'labo_microbiologie',  label: 'Labo Microbiologie',      seuil: 500 }, // type 4 uniquement
     ];
+    // Seuil de départ uniquement pour une zone qui n'existe pas encore — une
+    // fois créée, son seuil suit le bulletin (ou l'admin), jamais réécrit ici.
     for (const z of MAP_ZONES_SEED) {
       const [[{ zc }]] = await db.query("SELECT COUNT(*) AS zc FROM zones WHERE map_id = ?", [z.map_id]);
       if (zc === 0) {
         await db.query(
-          `INSERT INTO zones (label, map_id, status, ufc, seuil, responsible, last_check, next_check, alert_cls, alert_title, alert_desc)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO zones (label, map_id, status, ufc, seuil, responsible, alert_cls, alert_title, alert_desc)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
           [z.label, z.map_id, 'ok', 0, z.seuil, 'Non assigné',
-           new Date().toLocaleDateString('fr-FR'), '—',
            'good', 'Zone conforme', 'Niveaux dans les limites acceptables']
         );
-      } else {
-        // Corrige les seuils incorrects des zones déjà créées (migration)
-        await db.query("UPDATE zones SET seuil = ? WHERE map_id = ? AND seuil <> ?", [z.seuil, z.map_id, z.seuil]);
       }
     }
     console.log("✅  Zones carte vérifiées/initialisées en base.");
+
+    // InnoFaso est désormais le nom générique de la plateforme, plus celui
+    // d'une usine en particulier — et les coordonnées de contact ne doivent
+    // se remplir que lorsqu'un admin les saisit lui-même. Migration unique :
+    // ne touche que si la valeur est encore le seed d'origine (placeholder
+    // jamais personnalisé), pour ne jamais écraser une vraie saisie admin.
+    await db.query(
+      "UPDATE site_info SET key_value = 'InnoFaso' WHERE key_name = 'name' AND key_value = 'Usine Plumpy-Nut La Grace'"
+    );
+    await db.query(
+      "UPDATE site_info SET key_value = '' WHERE key_name = 'contact' AND key_value = 'qualite@lagrace.bf'"
+    );
+    await db.query(
+      "UPDATE site_info SET key_value = '' WHERE key_name = 'phone' AND key_value = '+226 25 38 00 00'"
+    );
+
+    // Rattrapage (juin 2026) : avant le fix de recomputeZone() (cf. lib/
+    // recomputeZone.js), seul zones.ufc était mis à jour après un import
+    // automatique — status/alert_cls/alert_title/alert_desc restaient figés
+    // sur leur dernière valeur fixée manuellement. Recalcule une fois pour
+    // toutes les zones existantes à partir de leur ufc/seuil déjà en base,
+    // pour ne pas laisser une zone affichée "conforme" alors qu'elle dépasse
+    // déjà son seuil. Sans effet sur une base où le statut est déjà exact.
+    const { computeStatus, ALERT_MAP } = require("./lib/recomputeZone");
+    const [allZones] = await db.query("SELECT id, ufc, seuil, status FROM zones");
+    for (const z of allZones) {
+      const correctStatus = computeStatus(Number(z.ufc), Number(z.seuil));
+      if (correctStatus !== z.status) {
+        const alert = ALERT_MAP[correctStatus];
+        await db.query(
+          "UPDATE zones SET status = ?, alert_cls = ?, alert_title = ?, alert_desc = ? WHERE id = ?",
+          [correctStatus, alert.alert_cls, alert.alert_title, alert.alert_desc, z.id]
+        );
+      }
+    }
   } catch (e) {
     console.warn("DB init warning:", e.message);
   }
@@ -281,8 +317,6 @@ app.use("/api/points",     require("./routes/points"));
 app.use("/api/settings",   require("./routes/settings"));
 app.use("/api/lab-results", require("./routes/labResults"));
 app.use("/api/pending-points", require("./routes/pendingPoints"));
-app.use("/api/corrective-actions", require("./routes/correctiveActions"));
-app.use("/api/production-batches", require("./routes/productionBatches"));
 
 // ── Health check ─────────────────────────────
 app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date() }));

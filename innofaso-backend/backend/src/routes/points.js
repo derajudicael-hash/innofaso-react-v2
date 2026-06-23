@@ -2,6 +2,7 @@ const express = require("express");
 const db      = require("../db");
 const auth             = require("../middleware/auth");
 const { computeNewPointPosition, resolvePointZone, inferPointType, queuePending } = require("../lib/pointResolution");
+const { recomputeZone, recomputeZoneSeuil } = require("../lib/recomputeZone");
 
 const router = express.Router();
 
@@ -35,18 +36,21 @@ router.get("/", async (req, res) => {
 // points), donc si le client ne les fournit pas, le serveur les calcule
 // lui-même (même éventail que pour les points créés par import de bulletin).
 router.post("/", auth, async (req, res) => {
-  const { id, zone_map_id, label, x, y, point_type, description, ufc } = req.body;
+  const { id, zone_map_id, label, x, y, point_type, description, ufc, seuil } = req.body;
   if (!id || !zone_map_id || !label) {
     return res.status(400).json({ error: "id, zone_map_id et label sont requis." });
   }
-  const ufcVal = (ufc !== undefined && ufc !== null && ufc !== "") ? Number(ufc) : null;
+  const ufcVal   = (ufc   !== undefined && ufc   !== null && ufc   !== "") ? Number(ufc)   : null;
+  const seuilVal = (seuil !== undefined && seuil !== null && seuil !== "") ? Number(seuil) : null;
   try {
     const pos = (x !== undefined && y !== undefined) ? { x: Number(x), y: Number(y) } : await computeNewPointPosition(zone_map_id);
     await db.query(
-      "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
-      [id.trim(), zone_map_id, label.trim(), pos.x, pos.y, point_type || "1", description || "", ufcVal]
+      "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc, seuil) VALUES (?,?,?,?,?,?,?,?,?)",
+      [id.trim(), zone_map_id, label.trim(), pos.x, pos.y, point_type || "1", description || "", ufcVal, seuilVal]
     );
-    res.status(201).json({ id: id.trim(), zone_map_id, label: label.trim(), x: pos.x, y: pos.y, point_type: point_type || "1", description: description || "", ufc: ufcVal });
+    if (seuilVal !== null) await recomputeZoneSeuil(zone_map_id);
+    if (ufcVal !== null) await recomputeZone(zone_map_id);
+    res.status(201).json({ id: id.trim(), zone_map_id, label: label.trim(), x: pos.x, y: pos.y, point_type: point_type || "1", description: description || "", ufc: ufcVal, seuil: seuilVal });
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY") {
       return res.status(409).json({ error: `L'identifiant "${id}" existe déjà.` });
@@ -65,12 +69,13 @@ router.post("/", auth, async (req, res) => {
 // l'import, et l'admin en est informé pour pouvoir le placer lui-même.
 // ─────────────────────────────────────────────
 router.post("/register", auth, async (req, res) => {
-  const { pointId, description, ufc } = req.body;
+  const { pointId, description, ufc, seuil } = req.body;
   if (!pointId?.trim() || !description?.trim()) {
     return res.status(400).json({ error: "Identifiant et description sont requis." });
   }
   const id = pointId.trim();
-  const ufcVal = (ufc !== undefined && ufc !== null && ufc !== "") ? Number(ufc) : null;
+  const ufcVal   = (ufc   !== undefined && ufc   !== null && ufc   !== "") ? Number(ufc)   : null;
+  const seuilVal = (seuil !== undefined && seuil !== null && seuil !== "") ? Number(seuil) : null;
 
   try {
     const [[existingPoint]] = await db.query("SELECT id FROM sampling_points WHERE id = ?", [id]);
@@ -84,8 +89,8 @@ router.post("/register", auth, async (req, res) => {
       const pointType = inferPointType(parsed, id);
       const pos = await computeNewPointPosition(zoneMapId);
       await db.query(
-        "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
-        [id, zoneMapId, id, pos.x, pos.y, pointType, description.trim(), ufcVal]
+        "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc, seuil) VALUES (?,?,?,?,?,?,?,?,?)",
+        [id, zoneMapId, id, pos.x, pos.y, pointType, description.trim(), ufcVal, seuilVal]
       );
       if (parsed?.room != null) {
         await db.query(
@@ -93,9 +98,11 @@ router.post("/register", auth, async (req, res) => {
           [parsed.room, zoneMapId]
         );
       }
+      if (seuilVal !== null) await recomputeZoneSeuil(zoneMapId);
+      if (ufcVal !== null) await recomputeZone(zoneMapId);
       return res.status(201).json({
         created: true, pending: false, zoneMapId,
-        point: { id, zone_map_id: zoneMapId, label: id, x: pos.x, y: pos.y, point_type: pointType, description: description.trim(), ufc: ufcVal },
+        point: { id, zone_map_id: zoneMapId, label: id, x: pos.x, y: pos.y, point_type: pointType, description: description.trim(), ufc: ufcVal, seuil: seuilVal },
       });
     }
 
@@ -105,6 +112,7 @@ router.post("/register", auth, async (req, res) => {
       pointType: parsed?.env ?? null,
       description: description.trim(),
       ufc: ufcVal,
+      seuil: seuilVal,
       salmonella: null,
       cronobacter: null,
       importId: null,
@@ -137,34 +145,34 @@ router.put("/:id", auth, async (req, res) => {
     const ufcVal = "ufc" in body
       ? ((body.ufc !== null && body.ufc !== "") ? Number(body.ufc) : null)
       : (existing.ufc !== null ? Number(existing.ufc) : null);
+    const seuilVal = "seuil" in body
+      ? ((body.seuil !== null && body.seuil !== "") ? Number(body.seuil) : null)
+      : (existing.seuil !== null ? Number(existing.seuil) : null);
 
     const [result] = await db.query(
-      "UPDATE sampling_points SET zone_map_id=?, label=?, x=?, y=?, point_type=?, description=?, ufc=? WHERE id=?",
-      [zone_map_id, label, x, y, point_type, description, ufcVal, req.params.id]
+      "UPDATE sampling_points SET zone_map_id=?, label=?, x=?, y=?, point_type=?, description=?, ufc=?, seuil=? WHERE id=?",
+      [zone_map_id, label, x, y, point_type, description, ufcVal, seuilVal, req.params.id]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: "Point introuvable." });
 
-    // Enregistrement automatique de l'historique quand UFC est fourni
-    if (ufcVal !== null) {
-      const [[zoneRow]] = await db.query("SELECT id FROM zones WHERE map_id = ?", [zone_map_id]);
-      if (zoneRow) {
-        const [pts] = await db.query(
-          "SELECT ufc FROM sampling_points WHERE zone_map_id = ? AND ufc IS NOT NULL",
-          [zone_map_id]
-        );
-        if (pts.length > 0) {
-          const maxUfc = Math.max(...pts.map(p => Number(p.ufc)));
-          await db.query("INSERT INTO zone_history (zone_id, ufc) VALUES (?, ?)", [zoneRow.id, maxUfc]);
-          await db.query(
-            "DELETE FROM zone_history WHERE zone_id = ? AND recorded_at < DATE_SUB(NOW(), INTERVAL 90 DAY)",
-            [zoneRow.id]
-          );
-          await db.query("UPDATE zones SET ufc = ? WHERE id = ?", [maxUfc, zoneRow.id]);
-        }
-      }
+    // Si le point change de zone, l'ANCIENNE zone doit aussi être recalculée
+    // (sinon elle reste figée sur un UFC/seuil qui incluait encore ce point) —
+    // mais on ne touche pas zone_history sur une simple modif de libellé/
+    // description qui ne change ni l'UFC, ni le seuil, ni la zone.
+    // recomputeZoneSeuil() avant recomputeZone() : ce dernier recalcule aussi
+    // le statut (ufc vs seuil) de la zone — il doit donc lire le seuil déjà à
+    // jour, pas l'ancien.
+    const zoneChanged = existing.zone_map_id !== zone_map_id;
+    if ("seuil" in body || zoneChanged) {
+      await recomputeZoneSeuil(zone_map_id);
+      if (zoneChanged) await recomputeZoneSeuil(existing.zone_map_id);
+    }
+    if ("ufc" in body || zoneChanged) {
+      await recomputeZone(zone_map_id);
+      if (zoneChanged) await recomputeZone(existing.zone_map_id);
     }
 
-    res.json({ id: req.params.id, zone_map_id, label, x, y, point_type, description, ufc: ufcVal });
+    res.json({ id: req.params.id, zone_map_id, label, x, y, point_type, description, ufc: ufcVal, seuil: seuilVal });
   } catch (err) {
     console.error("PUT /points/:id error:", err);
     res.status(500).json({ error: "Erreur serveur." });
@@ -178,8 +186,16 @@ router.put("/:id", auth, async (req, res) => {
 // plutôt que d'effacer silencieusement l'historique de mesures labo.
 router.delete("/:id", auth, async (req, res) => {
   try {
+    const [[existing]] = await db.query("SELECT zone_map_id FROM sampling_points WHERE id=?", [req.params.id]);
     const [result] = await db.query("DELETE FROM sampling_points WHERE id=?", [req.params.id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: "Point introuvable." });
+    // Le point supprimé pouvait porter l'UFC max ou le seuil le plus strict
+    // de sa zone — sinon celle-ci reste figée sur ces valeurs jusqu'au
+    // prochain import.
+    if (existing?.zone_map_id) {
+      await recomputeZoneSeuil(existing.zone_map_id);
+      await recomputeZone(existing.zone_map_id);
+    }
     res.json({ message: "Point supprimé." });
   } catch (err) {
     if (err.code === "ER_ROW_IS_REFERENCED_2" || err.code === "ER_ROW_IS_REFERENCED") {

@@ -17,8 +17,6 @@ import { PointsProvider }        from "./context/PointsContext";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 
-console.log("App.jsx loaded");
-
 function useClock() {
   const [clock, setClock] = useState("");
   useEffect(() => {
@@ -36,7 +34,6 @@ function useClock() {
 }
 
 function Router({ activeNav }) {
-  console.log("Router rendering, activeNav:", activeNav);
   switch (activeNav) {
     case "dashboard": return <DashboardPage />;
     case "carto":     return <CartoPage />;
@@ -49,7 +46,6 @@ function Router({ activeNav }) {
 }
 
 function InnerApp() {
-  console.log("InnerApp rendering");
   const { user, loading } = useAuth();
   const clock    = useClock();
   const [activeNav, setActiveNav] = useState("dashboard");
@@ -63,8 +59,6 @@ function InnerApp() {
     if (user) setActiveNav("admin");
     else      setShowLogin(true);
   };
-
-  console.log("InnerApp state:", { user, loading, activeNav, showLogin });
 
   if (loading) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontSize: '18px', color: '#64748b' }}>Chargement...</div>;
@@ -97,7 +91,6 @@ function InnerApp() {
 }
 
 export default function App() {
-  console.log("App component rendering");
   return (
     <ThemeProvider>
       <AuthProvider>

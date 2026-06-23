@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useRef, useState, useCallback } from 'react';
-import { ZONES } from './factoryData.js';
-import { getZoneLevel, LEVEL_COLORS } from './labParser.js';
+import { ZONES, isRandomPointId } from './factoryData.js';
+import { getZoneLevel, getPointOverallLevel, LEVEL_COLORS } from './labParser.js';
 
 // ViewBox exactly matching the image proportions: ~1515 × 490
 const VW = 1515, VH = 490;
@@ -12,6 +12,7 @@ const py = (p) => (p / 100) * VH;
 // Gray defaults
 const GRAY_ZONE_FILL   = '#e4e7eb';
 const GRAY_ZONE_STROKE = '#9ca3af';
+const GRAY_DOT         = '#9ca3af';
 
 // Zone fills when data is present
 const ZONE_DATA_FILL = {
@@ -27,10 +28,11 @@ const ZONE_DATA_FILL = {
 const BACKEND_FILL   = { ok: '#bbf7d0', warning: '#fde68a', critical: '#fecaca' };
 const BACKEND_STROKE = { ok: '#22c55e', warning: '#f59e0b', critical: '#ef4444' };
 
-export default function FactoryMap({ results, backendZones = [], dynamicPoints, selectedZone, onSelectZone }) {
+export default function FactoryMap({ results, backendZones = [], dynamicPoints, selectedZone, onSelectZone, onSelectPoint }) {
   const svgRef = useRef(null);
   const [vb, setVb] = useState({ x: 0, y: 0, w: VW, h: VH });
   const [hovZone, setHovZone] = useState(null);
+  const [hovPt, setHovPt] = useState(null);
   const panning = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const hasData = results.size > 0;
@@ -112,13 +114,10 @@ export default function FactoryMap({ results, backendZones = [], dynamicPoints, 
         <text x={px(44)} y={py(1.8)} textAnchor="middle" fontSize="7" fontWeight="600" fill="#555" fontFamily="Arial,sans-serif">Compresseur Sécheur + CTA +Aspirateur</text>
         <text x={px(44)} y={py(3.4)} textAnchor="middle" fontSize="6" fill="#777" fontFamily="Arial,sans-serif">30m²</text>
         <rect x={px(52.5)} y={py(0.3)} width={px(1.8)} height={py(3.6)} fill="none" stroke="#999" strokeWidth="1"/>
-        <circle cx={px(55.5)} cy={py(2.1)} r={px(1)} fill="none" stroke="#999" strokeWidth="1"/>
-        <circle cx={px(57.8)} cy={py(2.1)} r={px(1)} fill="none" stroke="#999" strokeWidth="1"/>
 
         {/* RIGHT-TOP ELEMENTS */}
         {[71.5, 76.2, 80.9].map((cx, i) => (
           <g key={i}>
-            <circle cx={px(cx)} cy={py(2.2)} r={px(1.8)} fill="white" stroke="#999" strokeWidth="1"/>
             <text x={px(cx)} y={py(1.8)} textAnchor="middle" fontSize="5.5" fill="#666" fontFamily="Arial,sans-serif">Cuve</text>
             <text x={px(cx)} y={py(3)} textAnchor="middle" fontSize="5.5" fill="#666" fontFamily="Arial,sans-serif">huile</text>
           </g>
@@ -220,6 +219,56 @@ export default function FactoryMap({ results, backendZones = [], dynamicPoints, 
                   style={{ pointerEvents: 'none' }}/>
               )}
 
+              {/* Points de prélèvement — un par point connu du système (créé par
+                  import de bulletin ou ajout manuel), placés aléatoirement dans
+                  leur zone (cf. computeNewPointPosition côté serveur) puisque le
+                  bulletin ne donne jamais de position physique réelle. */}
+              {zonePts.map(pt => {
+                const ptResults = results.get(pt.id) ?? [];
+                const ptLevel = ptResults.length > 0 ? getPointOverallLevel(ptResults) : 'unknown';
+                const dotColor = ptResults.length > 0 ? LEVEL_COLORS[ptLevel] : GRAY_DOT;
+                const ptx = px(pt.x), pty = py(pt.y);
+                const isHovP = hovPt === pt.id;
+                const r = isHovP ? 6.5 : 4.5;
+
+                return (
+                  <g key={pt.id} style={{ cursor: 'pointer' }}
+                    onClick={e => { e.stopPropagation(); onSelectPoint?.(pt, zone); }}
+                    onMouseEnter={() => setHovPt(pt.id)}
+                    onMouseLeave={() => setHovPt(null)}>
+                    <circle cx={ptx} cy={pty} r={r} fill={dotColor} stroke="white" strokeWidth="1.2"/>
+                    {isHovP && (() => {
+                      const hasUfc = pt.ufc !== null && pt.ufc !== undefined;
+                      const ufcTxt    = hasUfc ? `${pt.ufc} UFC/cm²` : null;
+                      const descTxt   = pt.description || null;
+                      const randomTxt = isRandomPointId(pt.id) ? 'Aléatoire' : 'Point fixe';
+                      const extraLines = [ufcTxt, descTxt, randomTxt].filter(Boolean);
+                      const w = Math.max(
+                        pt.label.length * 6.2 + 8,
+                        ...extraLines.map(t => t.length * 5.4 + 8)
+                      );
+                      const h = 14 + extraLines.length * 12;
+                      return (
+                        <g>
+                          <rect x={ptx + 7} y={pty - 9} width={w} height={h}
+                            fill="rgba(0,0,0,0.82)" rx="3"/>
+                          <text x={ptx + 11} y={pty + 1.5} fontSize="8.5" fill="white"
+                            fontWeight="700" fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
+                            {pt.label}
+                          </text>
+                          {extraLines.map((txt, i) => (
+                            <text key={i} x={ptx + 11} y={pty + 13 + i * 11} fontSize="7.5"
+                              fill={txt === randomTxt ? '#60a5fa' : txt === descTxt ? '#cbd5e1' : '#fbbf24'}
+                              fontFamily="Arial,sans-serif" style={{ pointerEvents: 'none' }}>
+                              {txt}
+                            </text>
+                          ))}
+                        </g>
+                      );
+                    })()}
+                  </g>
+                );
+              })}
             </g>
           );
         })}

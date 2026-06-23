@@ -1,4 +1,7 @@
-const BASE = "/api";
+// "/api" passe par le proxy Vite (dev) ou suppose front/back sur le même
+// domaine (prod derrière un reverse-proxy). Si front et back sont déployés
+// sur des domaines séparés, définir VITE_API_URL (ex: https://api.mondomaine.com/api).
+const BASE = import.meta.env.VITE_API_URL || "/api";
 
 // ── Token management ─────────────────────────
 export function getToken()        { return localStorage.getItem("innofaso_token"); }
@@ -69,6 +72,9 @@ export const zonesAPI = {
 
   remove: (id) =>
     request(`/zones/${id}`, { method: "DELETE" }),
+
+  revertSeuilToAuto: (id) =>
+    request(`/zones/${id}/seuil/auto`, { method: "POST" }),
 };
 
 // ═══════════════════════════════════════════
@@ -107,40 +113,16 @@ export const pendingPointsAPI = {
 };
 
 // ═══════════════════════════════════════════
-// ACTIONS CORRECTIVES (CAPA)
-// ═══════════════════════════════════════════
-export const correctiveActionsAPI = {
-  getAll: () => request("/corrective-actions"),
-
-  create: (data) =>
-    request("/corrective-actions", { method: "POST", body: JSON.stringify(data) }),
-
-  close: (id) =>
-    request(`/corrective-actions/${encodeURIComponent(id)}/close`, { method: "POST" }),
-};
-
-// ═══════════════════════════════════════════
-// LOTS DE PRODUCTION (traçabilité minimale)
-// ═══════════════════════════════════════════
-export const productionBatchesAPI = {
-  getAll: () => request("/production-batches"),
-
-  getActiveOn: (date) => request(`/production-batches/active-on?date=${encodeURIComponent(date)}`),
-
-  create: (data) =>
-    request("/production-batches", { method: "POST", body: JSON.stringify(data) }),
-
-  close: (id) =>
-    request(`/production-batches/${encodeURIComponent(id)}/close`, { method: "POST" }),
-};
-
-// ═══════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════
 export const settingsAPI = {
   getSiteInfo: () => request("/settings/site"),
   setSiteInfo: (data) =>
     request("/settings/site", { method: "PUT", body: JSON.stringify(data) }),
+
+  getMapDisplay: () => request("/settings/map-display"),
+  setMapDisplay: (importId) =>
+    request("/settings/map-display", { method: "PUT", body: JSON.stringify({ importId }) }),
 };
 
 // ═══════════════════════════════════════════
@@ -157,6 +139,9 @@ export const labResultsAPI = {
 
   deleteImport: (importId) =>
     request(`/lab-results/${encodeURIComponent(importId)}`, { method: "DELETE" }),
+
+  getPointsForImport: (importId) =>
+    request(`/lab-results/${encodeURIComponent(importId)}/points`),
 
   getPointHistory: (zoneMapId) =>
     request(`/lab-results/history?zoneMapId=${encodeURIComponent(zoneMapId)}`),

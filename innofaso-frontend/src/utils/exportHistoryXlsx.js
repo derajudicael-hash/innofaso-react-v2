@@ -1,7 +1,6 @@
 import ExcelJS from "exceljs";
 import { drawChart } from "../components/TrendChart.jsx";
 import { chunkSeries } from "./chunkSeries.js";
-import { TYPE_SEUIL } from "../hooks/useComputedZones.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Reproduit la structure du fichier de référence ("Tendance contrôle
@@ -287,9 +286,14 @@ function buildEbSheet(wb, groups, axis) {
 // ── Feuilles "EB & Salmo E{n}" : tableau + graphiques par Environnement ──
 function buildEnvironmentSheet(wb, env, group, axis) {
   const ws    = wb.addWorksheet(`EB & Salmo E${env}`);
-  const seuil = TYPE_SEUIL[env] ?? 50;
   const { fixed, random } = group;
   const allPts = [...fixed, ...random];
+  // Le seuil n'est plus déterminé par l'Environnement (1-4) mais par zone —
+  // un même Environnement peut désormais mélanger des points de zones à
+  // seuils différents. On retient le plus strict, cohérent avec la logique
+  // d'agrégation déjà appliquée au niveau zone (cf. recomputeZoneSeuil).
+  const seuils = fixed.map((p) => p.seuil).filter((s) => s !== null && s !== undefined);
+  const seuil  = seuils.length ? Math.min(...seuils) : 50;
 
   let row = 1;
   ws.getCell(row, 1).value = `EB E${env}`;
@@ -382,7 +386,7 @@ function buildFeuil1(wb, allFixed, allRandom, axis) {
 
   const allPts = [...allFixed, ...allRandom];
   const valuesByPoint = allPts.map((p) => ({
-    seuil:  TYPE_SEUIL[p.pointType] ?? 50,
+    seuil:  p.seuil ?? 50,
     values: weeklyValues(pointsOf(p), axis, ufcMapper),
   }));
 

@@ -54,10 +54,15 @@ export default function SettingsPage() {
 
   // ── Password ──
   const [pwd,      setPwd]      = useState({ old: "", new1: "", new2: "" });
+  const [pwdConfirmed, setPwdConfirmed] = useState(false);
   const [pwdSaving, setPwdSaving] = useState(false);
   const [pwdMsg,   setPwdMsg]   = useState(null);
 
   const changePassword = async () => {
+    if (!pwdConfirmed) {
+      setPwdMsg({ ok: false, text: "Cochez la case de confirmation pour valider le changement." });
+      return;
+    }
     if (pwd.new1 !== pwd.new2) {
       setPwdMsg({ ok: false, text: "Les deux nouveaux mots de passe ne correspondent pas." });
       return;
@@ -71,6 +76,7 @@ export default function SettingsPage() {
       await authAPI.changePassword(pwd.old, pwd.new1);
       setPwdMsg({ ok: true, text: "Mot de passe modifié avec succès." });
       setPwd({ old: "", new1: "", new2: "" });
+      setPwdConfirmed(false);
     } catch (e) {
       setPwdMsg({ ok: false, text: e.message || "Mot de passe actuel incorrect." });
     } finally {
@@ -137,9 +143,18 @@ export default function SettingsPage() {
               </Field>
             ))}
 
+            <label className="settings-pwd-warning">
+              <input
+                type="checkbox"
+                checked={pwdConfirmed}
+                onChange={(e) => setPwdConfirmed(e.target.checked)}
+              />
+              Je confirme vouloir changer ce mot de passe maintenant (pas par erreur).
+            </label>
+
             <FeedbackMsg msg={pwdMsg} />
 
-            <button className="settings-btn" onClick={changePassword} disabled={pwdSaving}>
+            <button className="settings-btn" onClick={changePassword} disabled={pwdSaving || !pwdConfirmed}>
               {pwdSaving ? "Modification…" : "Modifier le mot de passe"}
             </button>
           </SettingsSection>

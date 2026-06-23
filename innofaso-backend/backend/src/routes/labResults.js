@@ -2,7 +2,7 @@ const express = require("express");
 const db      = require("../db");
 const auth             = require("../middleware/auth");
 const { requireAdmin } = require("../middleware/auth");
-const { recomputeZone } = require("../lib/recomputeZone");
+const { recomputeZone, recomputeZoneSeuil } = require("../lib/recomputeZone");
 const { computeNewPointPosition, resolvePointZone, inferPointType, queuePending } = require("../lib/pointResolution");
 
 const router = express.Router();
@@ -106,6 +106,10 @@ router.post("/import", auth, async (req, res) => {
         entry.ufc = r.numericValue;
       }
       if (r.description) entry.description = r.description;
+      // Colonne "Spécifications" du bulletin (ex. "<10") — alimente le seuil
+      // du point puis, tant que la zone n'est pas en seuil manuel, le seuil
+      // de la zone elle-même (cf. recomputeZoneSeuil).
+      if (r.spec !== undefined && r.spec !== null) entry.seuil = r.spec;
     }
 
     // Journal de l'import créé en premier : sert à la fois aux points déjà
@@ -140,12 +144,19 @@ router.post("/import", auth, async (req, res) => {
           const pointType = inferPointType(parsed, pointId);
           const pos = await computeNewPointPosition(zoneMapId);
           await db.query(
-            "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc) VALUES (?,?,?,?,?,?,?,?)",
-            [pointId, zoneMapId, pointId, pos.x, pos.y, pointType, entry.description || "", entry.ufc ?? null]
+            "INSERT INTO sampling_points (id, zone_map_id, label, x, y, point_type, description, ufc, seuil) VALUES (?,?,?,?,?,?,?,?,?)",
+            [pointId, zoneMapId, pointId, pos.x, pos.y, pointType, entry.description || "", entry.ufc ?? null, entry.seuil ?? null]
           );
           createdIds.push(pointId);
           touchedZones.add(zoneMapId);
           touches.push({ pointId, ufcBefore: null, ufcAfter: entry.ufc ?? null, salmonella: entry.salmonella ?? null, cronobacter: entry.cronobacter ?? null });
+
+          // Une entrée en attente pour ce même ID a pu être créée par un
+          // bulletin précédent dont la description ne permettait pas encore
+          // de résoudre la zone — maintenant qu'il existe réellement, elle
+          // serait trompeuse (l'admin la verrait alors que le point est déjà
+          // placé) : on la retire.
+          await db.query("DELETE FROM pending_points WHERE point_id = ?", [pointId]);
 
           // La salle vient d'être déduite par mots-clés : on l'enregistre
           // dans room_zone_map pour que les imports suivants la rattachent
@@ -163,6 +174,7 @@ router.post("/import", auth, async (req, res) => {
             pointType: parsed?.env ?? null,
             description: entry.description || "",
             ufc: entry.ufc ?? null,
+            seuil: entry.seuil ?? null,
             salmonella: entry.salmonella ?? null,
             cronobacter: entry.cronobacter ?? null,
             importId,
@@ -176,14 +188,20 @@ router.post("/import", auth, async (req, res) => {
       const ufcBefore = row.ufc !== null ? Number(row.ufc) : null;
       const hasUfc     = entry.ufc !== undefined && entry.ufc !== null;
       const ufcAfter   = hasUfc ? entry.ufc : ufcBefore;
+      const hasSeuil   = entry.seuil !== undefined && entry.seuil !== null;
 
-      if (hasUfc) {
-        await db.query("UPDATE sampling_points SET ufc = ? WHERE id = ?", [ufcAfter, pointId]);
-        updatedCount++;
+      if (hasUfc || hasSeuil) {
+        if (hasUfc)   await db.query("UPDATE sampling_points SET ufc = ? WHERE id = ?", [ufcAfter, pointId]);
+        if (hasSeuil) await db.query("UPDATE sampling_points SET seuil = ? WHERE id = ?", [entry.seuil, pointId]);
+        if (hasUfc) updatedCount++;
       }
 
       touchedZones.add(row.zone_map_id);
       touches.push({ pointId, ufcBefore, ufcAfter, salmonella: entry.salmonella ?? null, cronobacter: entry.cronobacter ?? null });
+
+      // Même nettoyage que ci-dessus : le point existe déjà, toute entrée en
+      // attente résiduelle pour ce même ID n'a plus de raison d'être.
+      await db.query("DELETE FROM pending_points WHERE point_id = ?", [pointId]);
 
       // Points dupliqués par label (ex. '2.3.1' / '2.3.1b' désignent 2 points
       // physiques distincts mais le bulletin ne rapporte jamais que l'ID nu) :
@@ -201,6 +219,7 @@ router.post("/import", auth, async (req, res) => {
           await db.query("UPDATE sampling_points SET ufc = ? WHERE id = ?", [sibUfcAfter, sib.id]);
           updatedCount++;
         }
+        if (hasSeuil) await db.query("UPDATE sampling_points SET seuil = ? WHERE id = ?", [entry.seuil, sib.id]);
         touchedZones.add(sib.zone_map_id);
         touches.push({ pointId: sib.id, ufcBefore: sibUfcBefore, ufcAfter: sibUfcAfter, salmonella: entry.salmonella ?? null, cronobacter: entry.cronobacter ?? null });
       }
@@ -214,10 +233,20 @@ router.post("/import", auth, async (req, res) => {
     }
 
     for (const zoneMapId of touchedZones) {
+      // Seuil avant UFC : recomputeZone() recalcule aussi le statut de la
+      // zone à partir de son seuil, qui doit donc déjà être à jour.
+      await recomputeZoneSeuil(zoneMapId);
       await recomputeZone(zoneMapId);
     }
 
     await purgeOldHistory();
+
+    // Un nouvel import reprend toujours la main sur l'affichage de la carte,
+    // même si l'admin avait choisi de revoir un bulletin précédent (cf.
+    // réglage "Bulletin affiché sur la carte", routes/settings.js).
+    await db.query(
+      "INSERT INTO site_info (key_name, key_value) VALUES ('map_display_import_id', '') ON DUPLICATE KEY UPDATE key_value = ''"
+    );
 
     res.json({
       message: "Résultats importés avec succès",
@@ -245,6 +274,28 @@ router.get("/imports", async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("GET /lab-results/imports error:", err);
+    res.status(500).json({ error: "Erreur serveur." });
+  }
+});
+
+// ─────────────────────────────────────────────
+// GET /api/lab-results/:importId/points — IDs des points rapportés par cet
+// import précis (lecture publique) — sert à filtrer la carte sur "les points
+// qui sont dans ce bulletin" (cf. réglage "Bulletin affiché sur la carte").
+// ─────────────────────────────────────────────
+router.get("/:importId/points", async (req, res) => {
+  const importId = Number(req.params.importId);
+  if (!Number.isInteger(importId)) {
+    return res.status(400).json({ error: "Identifiant d'import invalide." });
+  }
+  try {
+    const [rows] = await db.query(
+      "SELECT DISTINCT point_id FROM point_history WHERE import_id = ?",
+      [importId]
+    );
+    res.json(rows.map(r => r.point_id));
+  } catch (err) {
+    console.error("GET /lab-results/:importId/points error:", err);
     res.status(500).json({ error: "Erreur serveur." });
   }
 });
@@ -349,11 +400,53 @@ router.delete("/:importId", auth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "Seul un import déjà annulé peut être supprimé complètement." });
     }
 
+    // Tous les points touchés par CET import — avant de le supprimer, tant
+    // que son historique existe encore pour pouvoir les identifier.
+    const [touchedRows] = await db.query(
+      "SELECT DISTINCT point_id FROM point_history WHERE import_id = ?",
+      [importId]
+    );
+
     // point_history.import_id est en ON DELETE CASCADE : la suppression de
     // l'import efface aussi tout son historique réel en une seule requête.
     await db.query("DELETE FROM import_batches WHERE id = ?", [importId]);
 
-    res.json({ message: "Import supprimé définitivement." });
+    // Pour chaque point touché, vérifie s'il lui reste un historique
+    // RÉEL (peu importe quel import l'a créé à l'origine) — s'il n'en
+    // reste plus du tout, c'est qu'aucun bulletin existant ne le justifie
+    // plus : on le supprime aussi, sinon il reste un point "fantôme" sur la
+    // carte. Décisif : se baser sur "plus aucun historique" plutôt que sur
+    // "était-ce CET import qui l'avait créé" — sinon, supprimer les imports
+    // un par un dans le mauvais ordre laisse des fantômes (la preuve de
+    // création disparaît avant que le tout dernier import restant ne soit
+    // lui-même supprimé). Un point créé à la main (jamais dans
+    // point_history) n'apparaît jamais dans touchedRows : toujours protégé.
+    const pointsToDelete = [];
+    for (const { point_id } of touchedRows) {
+      const [[{ remaining }]] = await db.query(
+        "SELECT COUNT(*) AS remaining FROM point_history WHERE point_id = ?",
+        [point_id]
+      );
+      if (remaining === 0) pointsToDelete.push(point_id);
+    }
+
+    if (pointsToDelete.length > 0) {
+      const touchedZones = new Set();
+      for (const pointId of pointsToDelete) {
+        const [[pt]] = await db.query("SELECT zone_map_id FROM sampling_points WHERE id = ?", [pointId]);
+        if (pt) touchedZones.add(pt.zone_map_id);
+      }
+      await db.query(
+        `DELETE FROM sampling_points WHERE id IN (${pointsToDelete.map(() => "?").join(",")})`,
+        pointsToDelete
+      );
+      for (const zoneMapId of touchedZones) {
+        await recomputeZoneSeuil(zoneMapId);
+        await recomputeZone(zoneMapId);
+      }
+    }
+
+    res.json({ message: "Import supprimé définitivement.", deletedPoints: pointsToDelete });
   } catch (err) {
     console.error("Delete import error:", err);
     res.status(500).json({ error: "Erreur lors de la suppression de l'import." });

@@ -4,28 +4,28 @@ import { zonesAPI, settingsAPI } from "../services/api";
 
 // Fallback static data for when backend is not available
 const FALLBACK_ZONES = [
-  { id: 1,  mapId: 'stockage_pf',        label: 'Stockage Produits Finis',  status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Koné Ibrahim',     last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 2,  mapId: 'conditionnement',    label: 'Conditionnement',           status: 'critical', ufc: 13, seuil: 10,  responsible: 'Sawadogo Marie',    last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'crit', alert_title: 'Action requise', alert_desc: 'Niveau critique – Action corrective immédiate obligatoire', history: [13] },
-  { id: 3,  mapId: 'melange',            label: 'Mélange',                   status: 'warning',  ufc: 0,  seuil: 10,  responsible: 'Traoré Amina',      last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
-  { id: 4,  mapId: 'premix',             label: 'Pré-Mélange',               status: 'warning',  ufc: 0,  seuil: 10,  responsible: 'Ouédraogo Paul',    last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
-  { id: 5,  mapId: 'pesage',             label: 'Pesage poudres',            status: 'critical', ufc: 11, seuil: 10,  responsible: 'Compaoré Jean',     last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'crit', alert_title: 'Action requise', alert_desc: 'Niveau critique – Action corrective immédiate obligatoire', history: [11] },
-  { id: 6,  mapId: 'huile',              label: 'Huile et pesage S+A+H',     status: 'ok',      ufc: 0,  seuil: 10,  responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 7,  mapId: 'sas_poudres',        label: 'SAS poudres',               status: 'warning',  ufc: 0,  seuil: 100, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
-  { id: 8,  mapId: 'matieres_premieres', label: 'Matières Premières',        status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 9,  mapId: 'laverie',            label: 'Laverie + buanderie',       status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 10, mapId: 'vestiaire_laverie',  label: 'Vestiaire Laverie',         status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 11, mapId: 'vestiaires_h',       label: 'Vestiaires H',              status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 12, mapId: 'vestiaires_visiteur',label: 'Vestiaires Visiteur',       status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 13, mapId: 'vestiaires_f',       label: 'Vestiaires F',              status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 14, mapId: 'labo_microbiologie', label: 'Labo Microbiologie',        status: 'ok',      ufc: 0,  seuil: 500, responsible: 'Non assigné',       last_check: new Date().toLocaleDateString('fr-FR'), next_check: '—', alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 1,  mapId: 'stockage_pf',        label: 'Stockage Produits Finis',  status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Koné Ibrahim',     alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 2,  mapId: 'conditionnement',    label: 'Conditionnement',           status: 'critical', ufc: 13, seuil: 10,  seuilManual: false, responsible: 'Sawadogo Marie',    alert_cls: 'crit', alert_title: 'Action requise', alert_desc: 'Niveau critique – Action corrective immédiate obligatoire', history: [13] },
+  { id: 3,  mapId: 'melange',            label: 'Mélange',                   status: 'warning',  ufc: 0,  seuil: 10,  seuilManual: false, responsible: 'Traoré Amina',      alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
+  { id: 4,  mapId: 'premix',             label: 'Pré-Mélange',               status: 'warning',  ufc: 0,  seuil: 10,  seuilManual: false, responsible: 'Ouédraogo Paul',    alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
+  { id: 5,  mapId: 'pesage',             label: 'Pesage poudres',            status: 'critical', ufc: 11, seuil: 10,  seuilManual: false, responsible: 'Compaoré Jean',     alert_cls: 'crit', alert_title: 'Action requise', alert_desc: 'Niveau critique – Action corrective immédiate obligatoire', history: [11] },
+  { id: 6,  mapId: 'huile',              label: 'Huile et pesage S+A+H',     status: 'ok',      ufc: 0,  seuil: 10,  seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 7,  mapId: 'sas_poudres',        label: 'SAS poudres',               status: 'warning',  ufc: 0,  seuil: 100, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
+  { id: 8,  mapId: 'matieres_premieres', label: 'Matières Premières',        status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 9,  mapId: 'laverie',            label: 'Laverie + buanderie',       status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 10, mapId: 'vestiaire_laverie',  label: 'Vestiaire Laverie',         status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 11, mapId: 'vestiaires_h',       label: 'Vestiaires H',              status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 12, mapId: 'vestiaires_visiteur',label: 'Vestiaires Visiteur',       status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 13, mapId: 'vestiaires_f',       label: 'Vestiaires F',              status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 14, mapId: 'labo_microbiologie', label: 'Labo Microbiologie',        status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
 ];
 
 const FALLBACK_SITE_INFO = {
-  name: "Usine Plumpy'Nut La Grâce",
-  city: "Ouagadougou",
-  country: "Burkina Faso",
-  contact: "contact@innofaso.bf",
-  phone: "+226 00 00 00 00",
+  name: "InnoFaso",
+  city: "",
+  country: "",
+  contact: "",
+  phone: "",
 };
 
 // Distingue une vraie panne réseau (backend hors-ligne, cf. services/api.js
@@ -84,7 +84,10 @@ export function AdminDataProvider({ children }) {
     }
   };
 
-  const updateZone = async (id, patch) => {
+  // seuilManual (booléen, optionnel) : à passer uniquement quand l'admin
+  // vient de confirmer (ou d'annuler) un changement manuel de seuil — cf.
+  // ZonesTab. Omis lors d'une modification normale (responsable, libellé).
+  const updateZone = async (id, patch, seuilManual) => {
     const existing = zones.find((z) => z.id === id);
     const merged   = { ...existing, ...patch };
     try {
@@ -93,17 +96,25 @@ export function AdminDataProvider({ children }) {
         ufc: merged.ufc,
         seuil: merged.seuil,
         responsible: merged.responsible,
-        lastCheck: merged.lastCheck,
-        nextCheck: merged.nextCheck,
+        ...(typeof seuilManual === "boolean" ? { seuilManual } : {}),
       });
       setZones((prev) => prev.map((z) => (z.id === id ? updated : z)));
       return updated;
     } catch (err) {
       if (!isNetworkError(err)) throw err;
       // Backend hors-ligne : on bascule sur l'état local pour ne pas bloquer l'utilisateur
-      setZones((prev) => prev.map((z) => (z.id === id ? merged : z)));
-      return merged;
+      const local = typeof seuilManual === "boolean" ? { ...merged, seuilManual } : merged;
+      setZones((prev) => prev.map((z) => (z.id === id ? local : z)));
+      return local;
     }
+  };
+
+  // Repasse le seuil de la zone en mode automatique (le bulletin redevient
+  // maître) et le recalcule immédiatement côté serveur.
+  const revertZoneSeuil = async (id) => {
+    const updated = await zonesAPI.revertSeuilToAuto(id);
+    setZones((prev) => prev.map((z) => (z.id === id ? { ...z, seuil: updated.seuil, seuilManual: updated.seuilManual } : z)));
+    return updated;
   };
 
   const deleteZone = async (id) => {
@@ -127,7 +138,7 @@ export function AdminDataProvider({ children }) {
 
   return (
     <AdminDataContext.Provider value={{
-      zones, addZone, updateZone, deleteZone,
+      zones, addZone, updateZone, revertZoneSeuil, deleteZone,
       siteInfo, setSiteInfo,
       loading, error, reload: loadAll,
     }}>
