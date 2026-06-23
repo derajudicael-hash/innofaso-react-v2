@@ -18,10 +18,11 @@ function statusOf(ufc, seuil) {
 const STATUS_LABEL = { critical: "Critique", warning: "Surveillance", ok: "Conforme" };
 
 const DURATION_OPTIONS = [
-  { value: 1,  label: "1 jour" },
-  { value: 7,  label: "7 jours" },
-  { value: 30, label: "30 jours" },
-  { value: 90, label: "3 mois" },
+  { value: 1,    label: "1 jour" },
+  { value: 7,    label: "7 jours" },
+  { value: 30,   label: "30 jours" },
+  { value: 90,   label: "3 mois" },
+  { value: null, label: "Depuis le début" },
 ];
 
 // Filtre les relevés d'une série (champ "points" pour les points fixes,
@@ -38,7 +39,13 @@ const DURATION_OPTIONS = [
 // alimentaire. Si une bonne raison existe de revoir un bulletin ancien, c'est
 // le rôle du réglage "Bulletin affiché sur la carte" (choix explicite), pas
 // celui de ce filtre.
+//
+// "Depuis le début" (days === null) ne change pas ce principe : pas de
+// coupure du tout, donc tout ce qui reste en base s'affiche — borné
+// naturellement par la fenêtre de rétention serveur (cf. RETENTION_DAYS,
+// routes/labResults.js), qui purge déjà les relevés au-delà de 365 jours.
 function filterSeriesByDuration(series, days, field = "points") {
+  if (days === null) return series;
   const cutoff = Date.now() - days * 86400000;
   return series.map((s) => ({
     ...s,
@@ -87,7 +94,8 @@ export default function HistoryPage() {
   const seriesInBulletin       = useMemo(() => allowedIds ? rawSeries.filter((s) => allowedIds.has(s.pointId)) : rawSeries, [rawSeries, allowedIds]);
   const randomPointsInBulletin = useMemo(() => allowedIds ? rawRandomPoints.filter((s) => allowedIds.has(s.pointId)) : rawRandomPoints, [rawRandomPoints, allowedIds]);
 
-  // Fenêtre de durée affichée (et exportée) — 1 jour / 7 jours / 30 jours / 3 mois.
+  // Fenêtre de durée affichée (et exportée) — 1 jour / 7 jours / 30 jours / 3 mois /
+  // depuis le début (null = pas de coupure, cf. filterSeriesByDuration).
   const [durationDays, setDurationDays] = useState(30);
   const series = useMemo(
     () => allowedIds ? seriesInBulletin : filterSeriesByDuration(seriesInBulletin, durationDays, "points"),
@@ -335,7 +343,9 @@ export default function HistoryPage() {
       ) : series.length === 0 && randomPoints.length === 0 ? (
         <div className="panel" style={{ padding: "44px 24px", textAlign: "center" }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", marginBottom: 8 }}>
-            Aucun relevé pour « {zone.label} » sur {DURATION_OPTIONS.find((o) => o.value === durationDays)?.label}
+            Aucun relevé pour « {zone.label} » {durationDays === null
+              ? "depuis le début"
+              : `sur ${DURATION_OPTIONS.find((o) => o.value === durationDays)?.label}`}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--txt3)", lineHeight: 1.7, maxWidth: 460, margin: "0 auto" }}>
             L'historique affiche uniquement les vraies données issues des bulletins d'analyse
