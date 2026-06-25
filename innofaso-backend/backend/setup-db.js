@@ -1,12 +1,19 @@
-const mysql = require("mysql2/promise");
-const fs    = require("fs");
-const path  = require("path");
+const mysql   = require("mysql2/promise");
+const fs      = require("fs");
+const path    = require("path");
+const crypto  = require("crypto");
 
 const envPath    = path.join(__dirname, ".env");
 const envExample = path.join(__dirname, ".env.example");
 if (!fs.existsSync(envPath) && fs.existsSync(envExample)) {
-  fs.copyFileSync(envExample, envPath);
-  console.log(".env créé automatiquement depuis .env.example");
+  let envContent = fs.readFileSync(envExample, "utf8");
+  // Génère un secret fort unique à chaque installation plutôt que de copier
+  // le placeholder "change_this_secret" du dépôt (server.js refuse de
+  // démarrer avec ce placeholder — voir garde-fou en tête de server.js).
+  const jwtSecret = crypto.randomBytes(48).toString("hex");
+  envContent = envContent.replace(/^JWT_SECRET=.*$/m, `JWT_SECRET=${jwtSecret}`);
+  fs.writeFileSync(envPath, envContent);
+  console.log(".env créé automatiquement depuis .env.example (JWT_SECRET généré aléatoirement)");
 }
 
 require("dotenv").config({ path: envPath });
