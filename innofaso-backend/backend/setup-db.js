@@ -1,4 +1,5 @@
 const mysql   = require("mysql2/promise");
+const bcrypt  = require("bcryptjs");
 const fs      = require("fs");
 const path    = require("path");
 const crypto  = require("crypto");
@@ -107,8 +108,31 @@ async function setup() {
     }
   }
 
+  // Création/mise à jour des comptes avec hashes bcrypt frais (idempotent)
+  const USERS = [
+    { username: "admin",   password: "Admin2026!",  name: "Administrateur Principal", role: "superadmin" },
+    { username: "qualite", password: "Qualite123!", name: "Responsable Qualité",       role: "editor" },
+  ];
+  for (const u of USERS) {
+    const hash = await bcrypt.hash(u.password, 10);
+    await conn.query(
+      `INSERT INTO admin_users (username, password, name, role)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE password=VALUES(password), name=VALUES(name), role=VALUES(role)`,
+      [u.username, hash, u.name, u.role]
+    );
+  }
+
   await conn.end();
-  console.log(`Base de données "${dbName}" prête.`);
+  console.log(`\n✅  Base de données "${dbName}" prête.\n`);
+  console.log("┌─────────────────────────────────────────────┐");
+  console.log("│  Comptes de connexion par défaut :           │");
+  console.log("│                                              │");
+  console.log("│  Superadmin : admin     /  Admin2026!        │");
+  console.log("│  Éditeur    : qualite   /  Qualite123!       │");
+  console.log("│                                              │");
+  console.log("│  Démarrez l'application : npm run dev        │");
+  console.log("└─────────────────────────────────────────────┘\n");
 }
 
 setup().catch((err) => {
