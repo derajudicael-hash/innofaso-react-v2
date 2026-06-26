@@ -320,7 +320,16 @@ app.use("/api/pending-points", require("./routes/pendingPoints"));
 app.use("/api/reports",    require("./routes/reports"));
 
 // ── Health check ─────────────────────────────
-app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date() }));
+// Expose install_id : le frontend le compare au démarrage pour détecter
+// un nouveau setup et vider automatiquement son localStorage.
+app.get("/api/health", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT key_value FROM site_info WHERE key_name = 'install_id'");
+    res.json({ status: "ok", time: new Date(), install_id: rows[0]?.key_value || null });
+  } catch {
+    res.json({ status: "ok", time: new Date(), install_id: null });
+  }
+});
 
 // ── 404 ──────────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: "Route introuvable." }));
