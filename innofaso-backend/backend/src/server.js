@@ -317,6 +317,7 @@ app.use("/api/points",     require("./routes/points"));
 app.use("/api/settings",   require("./routes/settings"));
 app.use("/api/lab-results", require("./routes/labResults"));
 app.use("/api/pending-points", require("./routes/pendingPoints"));
+app.use("/api/reports",    require("./routes/reports"));
 
 // ── Health check ─────────────────────────────
 app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date() }));
