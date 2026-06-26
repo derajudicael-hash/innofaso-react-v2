@@ -33,6 +33,12 @@ async function request(path, options = {}) {
       throw new Error("Réponse serveur invalide");
     }
 
+    // Token rejeté par le serveur (JWT_SECRET changé ou expiré côté serveur)
+    // → vider le localStorage et forcer la reconnexion avant de lever l'erreur.
+    if (res.status === 401) {
+      removeToken();
+      window.dispatchEvent(new CustomEvent("innofaso:session-expired"));
+    }
     if (!res.ok) throw new Error(data.error || "Erreur serveur");
     return data;
   } catch (err) {

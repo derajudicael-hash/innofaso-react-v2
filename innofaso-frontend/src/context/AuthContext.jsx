@@ -28,6 +28,14 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  // Déconnexion automatique si le serveur rejette le token (401)
+  // Déclenché par api.js via l'événement "innofaso:session-expired"
+  useEffect(() => {
+    const handleExpired = () => setUser(null);
+    window.addEventListener("innofaso:session-expired", handleExpired);
+    return () => window.removeEventListener("innofaso:session-expired", handleExpired);
+  }, []);
+
   const login = async (username, password) => {
     setLoginError("");
     try {
