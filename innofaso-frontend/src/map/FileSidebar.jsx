@@ -14,7 +14,7 @@ function ChevronIcon({ dir }) {
   );
 }
 
-export default function FileSidebar({ files, activeFileId, onSelectFile, onRemoveFile, onClearAll, onUpload, isLoading }) {
+export default function FileSidebar({ files, activeFileId, onSelectFile, onRemoveFile, onClearAll, onUpload, isLoading, isAdmin = true }) {
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { return false; }
   });
@@ -24,7 +24,7 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
   }, [collapsed]);
 
   const PARAM_COLOR = {
-    enterobacteries: '#2563eb',
+    enterobacteries: '#5c5852',
     salmonelles:     '#d97706',
     cronobacter:     '#7c3aed',
     unknown:         '#6b7280',
@@ -59,27 +59,42 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
           <ChevronIcon dir="right" />
         </button>
 
-        <button
-          onClick={onUpload}
-          disabled={isLoading}
-          title="Importer bulletin"
-          style={{
-            width: 34, height: 34, borderRadius: 8, border: 'none',
-            background: isLoading ? '#e2e8f0' : '#2563eb',
-            color: isLoading ? '#94a3b8' : 'white',
-            cursor: isLoading ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 19, fontWeight: 700, lineHeight: 1,
-          }}
-        >
-          +
-        </button>
+        {isAdmin ? (
+          <button
+            onClick={onUpload}
+            disabled={isLoading}
+            title="Importer bulletin"
+            style={{
+              width: 34, height: 34, borderRadius: 8, border: 'none',
+              background: isLoading ? '#e2e8f0' : '#5c5852',
+              color: isLoading ? '#94a3b8' : 'white',
+              cursor: isLoading ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 19, fontWeight: 700, lineHeight: 1,
+            }}
+          >
+            +
+          </button>
+        ) : (
+          <button
+            title="Connexion administrateur requise pour importer"
+            disabled
+            style={{
+              width: 34, height: 34, borderRadius: 8, border: '1px solid #e2e8f0',
+              background: '#f8fafc', color: '#94a3b8',
+              cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 15,
+            }}
+          >
+            🔒
+          </button>
+        )}
 
         {files.length > 0 && (
           <div
             title={`${files.length} bulletin${files.length > 1 ? 's' : ''} importé${files.length > 1 ? 's' : ''}`}
             style={{
-              fontSize: 10, fontWeight: 800, color: '#2563eb', background: '#eff6ff',
+              fontSize: 10, fontWeight: 800, color: '#5c5852', background: '#f5f0ec',
               borderRadius: 999, padding: '2px 7px', minWidth: 18, textAlign: 'center',
             }}
           >
@@ -120,21 +135,31 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
               border: '1px solid #e2e8f0', background: '#ffffff', color: '#94a3b8',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
-            onMouseEnter={e => e.currentTarget.style.color = '#2563eb'}
+            onMouseEnter={e => e.currentTarget.style.color = '#5c5852'}
             onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
           >
             <ChevronIcon dir="left" />
           </button>
         </div>
-        <button onClick={onUpload} disabled={isLoading} style={{
-          width: '100%', padding: '7px 0', borderRadius: 7,
-          background: isLoading ? '#e2e8f0' : '#2563eb',
-          color: isLoading ? '#94a3b8' : 'white',
-          border: 'none', cursor: isLoading ? 'default' : 'pointer',
-          fontSize: 12, fontWeight: 700,
-        }}>
-          {isLoading ? 'Traitement…' : '+ Importer bulletin'}
-        </button>
+        {isAdmin ? (
+          <button onClick={onUpload} disabled={isLoading} style={{
+            width: '100%', padding: '7px 0', borderRadius: 7,
+            background: isLoading ? '#e2e8f0' : '#5c5852',
+            color: isLoading ? '#94a3b8' : 'white',
+            border: 'none', cursor: isLoading ? 'default' : 'pointer',
+            fontSize: 12, fontWeight: 700,
+          }}>
+            {isLoading ? 'Traitement…' : '+ Importer bulletin'}
+          </button>
+        ) : (
+          <div style={{
+            width: '100%', padding: '7px 0', borderRadius: 7, textAlign: 'center',
+            background: '#f1f5f9', color: '#94a3b8', border: '1px solid #e2e8f0',
+            fontSize: 12, fontWeight: 600,
+          }}>
+            🔒 Connexion admin requise
+          </div>
+        )}
         <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 4, textAlign: 'center' }}>
           .docx · .csv · .xlsx
         </div>
@@ -157,7 +182,7 @@ export default function FileSidebar({ files, activeFileId, onSelectFile, onRemov
                 onClick={() => onSelectFile(f.id)}
                 style={{
                   margin: '2px 8px', padding: '8px 10px', borderRadius: 8,
-                  background: isActive ? '#f0f7ff' : 'transparent',
+                  background: isActive ? '#f5f0ec' : 'transparent',
                   border: `1px solid ${isActive ? pc + '88' : 'transparent'}`,
                   cursor: 'pointer', position: 'relative',
                   transition: 'background 0.12s',

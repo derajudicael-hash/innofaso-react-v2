@@ -16,6 +16,7 @@ import { ThemeProvider }         from "./context/ThemeContext";
 import { PointsProvider }        from "./context/PointsContext";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
+import AIReportsPage from "./pages/AIReportsPage";
 
 function useClock() {
   const [clock, setClock] = useState("");
@@ -40,6 +41,7 @@ function Router({ activeNav }) {
     case "alerts":    return <AlertsPage />;
     case "admin":     return <AdminPage />;
     case "history":   return <HistoryPage />;
+    case "rapport":   return <AIReportsPage />;
     case "settings":  return <SettingsPage />;
     default:          return <DashboardPage />;
   }
@@ -59,6 +61,12 @@ function InnerApp() {
     if (user) setActiveNav("admin");
     else      setShowLogin(true);
   };
+
+  useEffect(() => {
+    const handler = (e) => setActiveNav(e.detail?.to || "admin");
+    window.addEventListener("innofaso:navigate", handler);
+    return () => window.removeEventListener("innofaso:navigate", handler);
+  }, []);
 
   if (loading) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontSize: '18px', color: '#64748b' }}>Chargement...</div>;

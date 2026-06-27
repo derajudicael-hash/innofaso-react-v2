@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useComputedZones } from "../hooks/useComputedZones";
 import { usePointHistory, buildSeriesFromRaw } from "../hooks/usePointHistory";
 import { useMapDisplaySelection } from "../hooks/useMapDisplaySelection.js";
@@ -8,6 +8,10 @@ import { exportHistoryToDocx } from "../utils/exportHistoryDocx.js";
 import { exportHistoryToXlsx } from "../utils/exportHistoryXlsx.js";
 import TrendChart from "../components/TrendChart";
 import Icon from "../components/Icon";
+import { usePersistedFiles } from "../map/usePersistedFiles.js";
+import { usePoints } from "../context/PointsContext.jsx";
+import { assignPointColors } from "../utils/pointColors.js";
+import { isRandomPointId } from "../map/factoryData.js";
 
 function statusOf(ufc, seuil) {
   if (ufc >= seuil)        return "critical";
@@ -70,19 +74,32 @@ function StatBox({ label, value, unit, colorClass, tooltip }) {
   );
 }
 
+// Convertit "JJ/MM/AAAA" (format bulletin) en ISO — même logique que
+// parseReportDate côté backend, pour que la déduplication par date fonctionne.
+function parseLocalDate(str) {
+  if (!str) return null;
+  const m = String(str).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 export default function HistoryPage() {
   const { computedZones: zones, loading } = useComputedZones();
   const { user } = useAuth();
   const isSuperadmin = user?.role === "superadmin";
 
   const [selectedId, setSelectedId] = useState(null);
+  const [comparedId, setComparedId] = useState(null);
   useEffect(() => {
     if (zones.length && !selectedId) setSelectedId(zones[0].id);
   }, [zones, selectedId]);
   const zone = useMemo(() => zones.find((z) => z.id === selectedId) || zones[0] || null, [zones, selectedId]);
+  const comparedZone = useMemo(() => comparedId ? zones.find(z => z.id === comparedId) ?? null : null, [zones, comparedId]);
 
   // Courbes par point (Phase 1) + points aléatoires distincts (Phase 2), réelles depuis le backend
-  const { series: rawSeries, randomPoints: rawRandomPoints, loading: histLoading, reload: reloadHistory } = usePointHistory(zone?.mapId);
+  const { series: rawSeries, randomPoints: rawRandomPoints, loading: histLoading, error: histError, reload: reloadHistory } = usePointHistory(zone?.mapId);
+  const { series: rawComparedSeries } = usePointHistory(comparedZone?.mapId ?? null);
 
   // Bulletin affiché (cf. AdminPage, onglet "Bulletin sur la carte") — "partout
   // sur l'écran", donc aussi ici. Quand un bulletin précis est choisi, on
@@ -91,12 +108,76 @@ export default function HistoryPage() {
   // ancien choisi exprès serait sinon masqué par la fenêtre récente) : il
   // est ignoré tant que le choix n'est pas "Automatique".
   const { allowedIds } = useMapDisplaySelection();
-  const seriesInBulletin       = useMemo(() => allowedIds ? rawSeries.filter((s) => allowedIds.has(s.pointId)) : rawSeries, [rawSeries, allowedIds]);
+
+  // ── Source locale : bulletins importés hors-ligne (localStorage) ─────────
+  // Complète les données backend pour les bulletins importés sans serveur actif.
+  const { fileEntries, fileResults } = usePersistedFiles();
+  const { pointsByZone: allPointsByZone } = usePoints();
+
+  const localSeries = useMemo(() => {
+    if (!zone || !allPointsByZone) return [];
+    const zonePointIds = new Set((allPointsByZone[zone.mapId] || []).map(p => p.id));
+    if (zonePointIds.size === 0) return [];
+
+    const byPoint = new Map(); // pointId → Map<dateKey, mesure>
+    for (const fileEntry of fileEntries) {
+      const results = fileResults[fileEntry.id] || [];
+      const bulletinByPoint = {};
+      for (const r of results) {
+        if (!zonePointIds.has(r.pointId)) continue;
+        if (!bulletinByPoint[r.pointId]) bulletinByPoint[r.pointId] = { dateStr: r.date || fileEntry.date };
+        const e = bulletinByPoint[r.pointId];
+        if (r.parameter === "salmonelles")      e.salmonella  = r.detected ?? null;
+        else if (r.parameter === "cronobacter") e.cronobacter = r.detected ?? null;
+        else if (r.numericValue !== undefined && r.numericValue !== null) e.ufc = r.numericValue;
+        if (r.date && !e.dateStr) e.dateStr = r.date;
+      }
+      for (const [pointId, entry] of Object.entries(bulletinByPoint)) {
+        if (!byPoint.has(pointId)) byPoint.set(pointId, new Map());
+        const isoDate = parseLocalDate(entry.dateStr);
+        if (!isoDate) continue;
+        const dateKey = isoDate.substring(0, 10);
+        if (!byPoint.get(pointId).has(dateKey)) {
+          byPoint.get(pointId).set(dateKey, {
+            ufc: entry.ufc ?? null, salmonella: entry.salmonella ?? null,
+            cronobacter: entry.cronobacter ?? null, date: isoDate,
+          });
+        }
+      }
+    }
+    const ids = [...byPoint.keys()].filter(id => !isRandomPointId(id));
+    const colorMap = assignPointColors(ids);
+    return ids.map(pointId => ({
+      pointId, label: pointId, description: "", color: colorMap.get(pointId),
+      points: [...byPoint.get(pointId).values()].sort((a, b) => new Date(a.date) - new Date(b.date)),
+    }));
+  }, [zone, allPointsByZone, fileEntries, fileResults]);
+
+  // Fusion backend + local : backend prioritaire, local comble les trous.
+  const mergedRawSeries = useMemo(() => {
+    if (!localSeries.length) return rawSeries;
+    const resultMap = new Map(rawSeries.map(s => [s.pointId, { ...s, points: [...(s.points || [])] }]));
+    for (const ls of localSeries) {
+      if (!resultMap.has(ls.pointId)) {
+        resultMap.set(ls.pointId, ls);
+      } else {
+        const existing = resultMap.get(ls.pointId);
+        const backendDates = new Set(existing.points.map(p => new Date(p.date).toISOString().substring(0, 10)));
+        const newPts = (ls.points || []).filter(p => !backendDates.has(new Date(p.date).toISOString().substring(0, 10)));
+        if (newPts.length > 0) {
+          existing.points = [...existing.points, ...newPts].sort((a, b) => new Date(a.date) - new Date(b.date));
+        }
+      }
+    }
+    return [...resultMap.values()];
+  }, [rawSeries, localSeries]);
+
+  const seriesInBulletin       = useMemo(() => allowedIds ? mergedRawSeries.filter((s) => allowedIds.has(s.pointId)) : mergedRawSeries, [mergedRawSeries, allowedIds]);
   const randomPointsInBulletin = useMemo(() => allowedIds ? rawRandomPoints.filter((s) => allowedIds.has(s.pointId)) : rawRandomPoints, [rawRandomPoints, allowedIds]);
 
   // Fenêtre de durée affichée (et exportée) — 1 jour / 7 jours / 30 jours / 3 mois /
   // depuis le début (null = pas de coupure, cf. filterSeriesByDuration).
-  const [durationDays, setDurationDays] = useState(30);
+  const [durationDays, setDurationDays] = useState(null);
   const series = useMemo(
     () => allowedIds ? seriesInBulletin : filterSeriesByDuration(seriesInBulletin, durationDays, "points"),
     [seriesInBulletin, durationDays, allowedIds]
@@ -108,13 +189,24 @@ export default function HistoryPage() {
 
   // Checkboxes de visibilité par point — toutes cochées par défaut, réinitialisées au changement de zone
   const [hiddenIds, setHiddenIds] = useState(() => new Set());
-  useEffect(() => { setHiddenIds(new Set()); }, [zone?.mapId]);
+  const [showImports, setShowImports] = useState(false);
+  const [tablePage, setTablePage] = useState(1);
+  const ROWS_PER_PAGE = 25;
+  const chartRef = useRef(null);
+  useEffect(() => { setHiddenIds(new Set()); setTablePage(1); }, [zone?.mapId]);
   const togglePoint = (pointId) => setHiddenIds((prev) => {
     const next = new Set(prev);
     if (next.has(pointId)) next.delete(pointId); else next.add(pointId);
     return next;
   });
   const visibleSeries = useMemo(() => series.filter((s) => !hiddenIds.has(s.pointId)), [series, hiddenIds]);
+  const comparedSeries = useMemo(() => {
+    if (!comparedZone || !rawComparedSeries.length) return [];
+    const cs = allowedIds
+      ? rawComparedSeries.filter(s => allowedIds.has(s.pointId))
+      : filterSeriesByDuration(rawComparedSeries, durationDays, "points");
+    return cs.map(s => ({ ...s, dashed: true, label: `${s.label || s.pointId} (${comparedZone.label})` }));
+  }, [comparedZone, rawComparedSeries, allowedIds, durationDays]);
 
   const seuil = zone?.worstSeuil ?? zone?.seuil ?? 50;
 
@@ -131,11 +223,20 @@ export default function HistoryPage() {
   const stats = useMemo(() => {
     if (!allPointsFlat.length) return null;
     const values = allPointsFlat.map((p) => p.ufc);
-    const avg    = Math.round(values.reduce((s, v) => s + v, 0) / values.length);
-    const max    = Math.max(...values);
-    const min    = Math.min(...values);
-    const trend  = values.length >= 2 ? values[values.length - 1] - values[0] : 0;
-    return { avg, max, min, trend };
+    const n   = values.length;
+    const avg = Math.round(values.reduce((s, v) => s + v, 0) / n);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    let slope = 0;
+    if (n >= 2) {
+      const times  = allPointsFlat.map(p => new Date(p.date).getTime());
+      const tMean  = times.reduce((s, t) => s + t, 0) / n;
+      const num    = times.reduce((acc, t, i) => acc + (t - tMean) * (values[i] - avg), 0);
+      const den    = times.reduce((acc, t)    => acc + (t - tMean) ** 2, 0);
+      if (den !== 0) slope = Math.round((num / den) * 86400000 * 10) / 10;
+    }
+    const confRate = Math.round(allPointsFlat.filter(p => p.ufc < p.seuil).length / n * 100);
+    return { avg, max, min, slope, confRate };
   }, [allPointsFlat]);
 
   // ── Journal des imports (annulation superadmin) ─────────────
@@ -275,17 +376,25 @@ export default function HistoryPage() {
           </div>
         </div>
         <div className="history-export-group">
+          <button
+            className="history-export-btn"
+            style={{ background: '#5c5852', color: '#fff', borderColor: '#5c5852' }}
+            onClick={handleExportExcel} disabled={exportingXlsx}
+          >
+            <Icon name="download" size={14} strokeWidth={2} />
+            {exportingXlsx ? "En cours…" : "Excel (toutes zones)"}
+          </button>
+          <button
+            className="history-export-btn"
+            style={{ background: '#5c5852', color: '#fff', borderColor: '#5c5852' }}
+            onClick={handleExportWord} disabled={exporting}
+          >
+            <Icon name="download" size={14} strokeWidth={2} />
+            {exporting ? "En cours…" : "Word (toutes zones)"}
+          </button>
           <button className="history-export-btn" onClick={handleExportCSV} disabled={!zone || !allPointsFlat.length}>
             <Icon name="download" size={14} strokeWidth={2} />
-            CSV (zone)
-          </button>
-          <button className="history-export-btn" onClick={handleExportWord} disabled={exporting}>
-            <Icon name="download" size={14} strokeWidth={2} />
-            {exporting ? "Export en cours…" : "Export Word (toutes zones)"}
-          </button>
-          <button className="history-export-btn" onClick={handleExportExcel} disabled={exportingXlsx}>
-            <Icon name="download" size={14} strokeWidth={2} />
-            {exportingXlsx ? "Export en cours…" : "Export Excel (toutes zones)"}
+            CSV (zone seule)
           </button>
         </div>
       </div>
@@ -316,6 +425,19 @@ export default function HistoryPage() {
           ))}
         </select>
 
+        <select
+          className="history-zone-select"
+          value={comparedId || ""}
+          onChange={(e) => setComparedId(e.target.value || null)}
+          title="Superposer une deuxième zone (courbes tiretées)"
+          style={{ maxWidth: 220, color: comparedId ? 'var(--txt)' : 'var(--txt3)' }}
+        >
+          <option value="">— Comparer avec —</option>
+          {zones.filter(z => z.id !== zone?.id).map((z) => (
+            <option key={z.id} value={z.id}>{z.label}</option>
+          ))}
+        </select>
+
         <div className="history-duration-group" title={allowedIds ? "Filtre de durée ignoré tant qu'un bulletin précis est choisi" : undefined}>
           {DURATION_OPTIONS.map((opt) => (
             <button
@@ -340,6 +462,23 @@ export default function HistoryPage() {
         <div className="dash-loading">Aucune zone disponible.</div>
       ) : histLoading ? (
         <div className="dash-loading"><div className="spinner" />Chargement…</div>
+      ) : (histError && series.length === 0 && randomPoints.length === 0) ? (
+        <div className="panel" style={{ padding: "44px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#991b1b", marginBottom: 8 }}>
+            ⛔ Impossible de charger l'historique
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--txt3)", lineHeight: 1.7, maxWidth: 480, margin: "0 auto" }}>
+            Le serveur backend n'est pas accessible (port 4000). Vérifiez qu'il est lancé, puis rechargez la page.
+            Aucun bulletin local n'est disponible pour cette zone non plus.
+          </div>
+          <button
+            onClick={reloadHistory}
+            style={{ marginTop: 14, padding: "7px 18px", borderRadius: 8, border: "1px solid #e2e8f0",
+              background: "#f8fafc", color: "#334155", fontSize: 13, cursor: "pointer", fontWeight: 600 }}
+          >
+            Réessayer
+          </button>
+        </div>
       ) : series.length === 0 && randomPoints.length === 0 ? (
         <div className="panel" style={{ padding: "44px 24px", textAlign: "center" }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", marginBottom: 8 }}>
@@ -347,51 +486,98 @@ export default function HistoryPage() {
               ? "depuis le début"
               : `sur ${DURATION_OPTIONS.find((o) => o.value === durationDays)?.label}`}
           </div>
-          <div style={{ fontSize: 12.5, color: "var(--txt3)", lineHeight: 1.7, maxWidth: 460, margin: "0 auto" }}>
-            L'historique affiche uniquement les vraies données issues des bulletins d'analyse
-            importés depuis la Cartographie. Essayez une fenêtre plus large (ex. 3 mois), ou
-            importez un bulletin couvrant un ou plusieurs points de cette zone.
+          <div style={{ fontSize: 12.5, color: "var(--txt3)", lineHeight: 1.7, maxWidth: 480, margin: "0 auto" }}>
+            {imports.filter(i => i.status !== "annule").length > 0 ? (
+              <>
+                Des bulletins ont été importés (voir le journal ci-dessous), mais aucun point
+                de <strong>{zone.label}</strong> n'apparaît dans ces bulletins.
+              </>
+            ) : (
+              <>
+                Aucun bulletin importé. Importez un bulletin depuis la page Cartographie
+                pour commencer le suivi de l'historique.
+              </>
+            )}
           </div>
         </div>
       ) : (
         <>
+          {histError && (
+            <div className="pts-notice pts-notice--warning" style={{ marginBottom: 12 }}>
+              <span>⚠ Serveur non disponible — historique partiel (données locales uniquement). Relancez le backend pour voir l'historique complet.</span>
+              <button onClick={reloadHistory} style={{ marginLeft: 8, padding: "4px 10px", borderRadius: 7, border: "1px solid #92400e", background: "transparent", color: "#92400e", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Réessayer</button>
+            </div>
+          )}
           {/* Stats */}
-          <div className="history-stats">
+          <div className="history-stats" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
             <StatBox
               label="Moyenne"
               value={stats?.avg ?? "—"}
               unit="UFC/cm²"
               colorClass={stats?.avg >= seuil ? "red" : stats?.avg >= seuil * 0.8 ? "orange" : ""}
-              tooltip="Moyenne de tous les relevés de cette zone sur la période affichée : donne le niveau de contamination habituel, sans qu'un seul pic isolé ne fausse la lecture."
+              tooltip="Moyenne de tous les relevés de cette zone sur la période affichée."
             />
             <StatBox
               label="Maximum"
               value={stats?.max ?? "—"}
               unit="UFC/cm²"
               colorClass={stats?.max >= seuil ? "red" : ""}
-              tooltip="La pire valeur relevée sur la période : le moment où cette zone était la plus contaminée."
+              tooltip="La pire valeur relevée sur la période."
             />
             <StatBox
               label="Minimum"
               value={stats?.min ?? "—"}
               unit="UFC/cm²"
               colorClass=""
-              tooltip="La meilleure valeur relevée sur la période : le moment où cette zone était la plus propre."
+              tooltip="La meilleure valeur relevée sur la période."
             />
             <StatBox
               label="Tendance"
               value={stats
-                ? (stats.trend > 0 ? "+" : stats.trend < 0 ? "-" : "") + Math.abs(stats.trend)
+                ? (stats.slope > 0 ? "+" : "") + Math.abs(stats.slope)
                 : "—"}
-              unit="UFC/cm²"
-              colorClass={stats?.trend > 0 ? "red" : stats?.trend < 0 ? "green" : ""}
-              tooltip="Différence entre le dernier relevé et le premier relevé de la période. Un nombre positif (+) veut dire que la contamination augmente ; un nombre négatif (-) veut dire qu'elle diminue."
+              unit="UFC/j"
+              colorClass={stats?.slope > 0 ? "red" : stats?.slope < 0 ? "green" : ""}
+              tooltip="Pente de régression linéaire sur la période (UFC/cm² par jour). Un + indique une contamination croissante, un – une amélioration. Plus fiable que la simple différence premier/dernier relevé."
+            />
+            <StatBox
+              label="Conformité"
+              value={stats?.confRate ?? "—"}
+              unit="%"
+              colorClass={!stats ? "" : stats.confRate >= 90 ? "green" : stats.confRate >= 70 ? "orange" : "red"}
+              tooltip="Pourcentage de mesures dans les limites réglementaires (UFC < seuil) sur la période affichée."
             />
           </div>
 
           {/* Graphique multi-points */}
           <div className="panel history-chart-panel">
-            <div className="panel-header">{zone.label} — Évolution UFC/cm² par point</div>
+            <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>
+                {zone.label} — Évolution UFC/cm² par point
+                {comparedZone && (
+                  <span style={{ fontWeight: 400, color: 'var(--txt3)', fontSize: 11, marginLeft: 10 }}>
+                    vs {comparedZone.label} (tireté)
+                  </span>
+                )}
+              </span>
+              {allPointsFlat.length > 0 && (
+                <button
+                  className="history-export-btn"
+                  style={{ marginLeft: 'auto', fontSize: 11 }}
+                  onClick={() => {
+                    const dataUrl = chartRef.current?.getDataUrl();
+                    if (!dataUrl) return;
+                    const a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = `${zone.label.replace(/\s+/g, '_')}_graphique.png`;
+                    a.click();
+                  }}
+                >
+                  <Icon name="download" size={12} strokeWidth={2} />
+                  PNG
+                </button>
+              )}
+            </div>
             {series.length > 0 && (
               <div className="history-legend">
                 {series.map((s) => (
@@ -408,7 +594,21 @@ export default function HistoryPage() {
               </div>
             )}
             <div className="history-chart-wrap">
-              <TrendChart series={visibleSeries} seuil={seuil} />
+              {allPointsFlat.length === 0 && series.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 8 }}>
+                  <div style={{ fontSize: 13, color: 'var(--txt3)', textAlign: 'center' }}>
+                    Des relevés existent mais tombent hors de la fenêtre sélectionnée.
+                  </div>
+                  <button
+                    style={{ fontSize: 12, padding: '5px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--txt2)', cursor: 'pointer' }}
+                    onClick={() => setDurationDays(null)}
+                  >
+                    Afficher depuis le début
+                  </button>
+                </div>
+              ) : (
+                <TrendChart ref={chartRef} series={[...visibleSeries, ...comparedSeries]} seuil={seuil} />
+              )}
             </div>
           </div>
 
@@ -436,7 +636,7 @@ export default function HistoryPage() {
             </div>
           )}
 
-          {/* Tableau détaillé */}
+          {/* Tableau détaillé avec pagination */}
           <div className="panel">
             <div className="panel-header">
               Relevés ({allPointsFlat.length})
@@ -455,37 +655,65 @@ export default function HistoryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {allPointsFlat.slice().reverse().map((h, i) => {
-                    const st    = statusOf(h.ufc, h.seuil);
-                    const marge = h.seuil - h.ufc;
-                    return (
-                      <tr key={`${h.pointId}-${h.date}-${i}`} className={i % 2 === 0 ? "row-even" : ""}>
-                        <td className="td-date">{fmtDateFull(h.date)}</td>
-                        <td className="mono txt3">{h.pointId}</td>
-                        <td className={`mono ${st === "critical" ? "red" : st === "warning" ? "orange" : ""}`}>
-                          {h.ufc}
-                        </td>
-                        <td className="mono txt3">{h.seuil}</td>
-                        <td><span className={`status-badge ${st}`}>{STATUS_LABEL[st]}</span></td>
-                        <td className={`mono ${marge < 0 ? "red" : marge < h.seuil * 0.2 ? "orange" : "green"}`}>
-                          {marge > 0 ? "+" : ""}{marge}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {allPointsFlat.slice().reverse()
+                    .slice((tablePage - 1) * ROWS_PER_PAGE, tablePage * ROWS_PER_PAGE)
+                    .map((h, i) => {
+                      const st    = statusOf(h.ufc, h.seuil);
+                      const marge = h.seuil - h.ufc;
+                      return (
+                        <tr key={`${h.pointId}-${h.date}-${i}`} className={i % 2 === 0 ? "row-even" : ""}>
+                          <td className="td-date">{fmtDateFull(h.date)}</td>
+                          <td className="mono txt3">{h.pointId}</td>
+                          <td className={`mono ${st === "critical" ? "red" : st === "warning" ? "orange" : ""}`}>
+                            {h.ufc}
+                          </td>
+                          <td className="mono txt3">{h.seuil}</td>
+                          <td><span className={`status-badge ${st}`}>{STATUS_LABEL[st]}</span></td>
+                          <td className={`mono ${marge < 0 ? "red" : marge < h.seuil * 0.2 ? "orange" : "green"}`}>
+                            {marge > 0 ? "+" : ""}{marge}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
+            {allPointsFlat.length > ROWS_PER_PAGE && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
+                <button
+                  disabled={tablePage === 1}
+                  onClick={() => setTablePage(p => p - 1)}
+                  style={{ padding: '4px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: tablePage === 1 ? 'var(--txt3)' : 'var(--txt)', cursor: tablePage === 1 ? 'default' : 'pointer', fontWeight: 600 }}
+                >
+                  ← Précédent
+                </button>
+                <span style={{ color: 'var(--txt3)', minWidth: 100, textAlign: 'center' }}>
+                  Page {tablePage} / {Math.ceil(allPointsFlat.length / ROWS_PER_PAGE)}
+                </span>
+                <button
+                  disabled={tablePage >= Math.ceil(allPointsFlat.length / ROWS_PER_PAGE)}
+                  onClick={() => setTablePage(p => p + 1)}
+                  style={{ padding: '4px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: tablePage >= Math.ceil(allPointsFlat.length / ROWS_PER_PAGE) ? 'var(--txt3)' : 'var(--txt)', cursor: tablePage >= Math.ceil(allPointsFlat.length / ROWS_PER_PAGE) ? 'default' : 'pointer', fontWeight: 600 }}
+                >
+                  Suivant →
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}
 
       {/* Journal des imports */}
       <div className="panel">
-        <div className="panel-header">
-          Journal des imports{importsLoading ? " — chargement…" : ""}
+        <div
+          className="panel-header"
+          onClick={() => setShowImports(v => !v)}
+          style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <span>Journal des imports{importsLoading ? " — chargement…" : ""} ({imports.length})</span>
+          <span style={{ fontSize: 11, color: 'var(--txt3)', marginLeft: 8 }}>{showImports ? '▲ Masquer' : '▼ Afficher'}</span>
         </div>
-        <div className="history-table-wrap">
+        {showImports && <div className="history-table-wrap">
           <table className="history-table">
             <thead>
               <tr>
@@ -536,7 +764,7 @@ export default function HistoryPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
     </div>
   );

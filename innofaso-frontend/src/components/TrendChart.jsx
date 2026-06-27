@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from "react";
 
 function fmtDateShort(d) {
   return `${d.getDate()}/${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -100,13 +100,17 @@ export function drawChart(canvas, series, seuil) {
     if (valid.length === 0) return;
     const pix = valid.map(p => ({ x: xPix(new Date(p.date).getTime()), y: yPix(p.ufc), src: p }));
 
+    if (s.dashed) ctx.globalAlpha = 0.5;
+
     if (pix.length > 1) {
+      if (s.dashed) ctx.setLineDash([6, 4]);
       ctx.beginPath();
       pix.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.strokeStyle = s.color;
       ctx.lineWidth   = 2;
       ctx.lineJoin    = "round";
       ctx.stroke();
+      if (s.dashed) ctx.setLineDash([]);
     }
 
     pix.forEach((p) => {
@@ -155,6 +159,8 @@ export function drawChart(canvas, series, seuil) {
         ufc: p.src.ufc, date: p.src.date, salmonella: p.src.salmonella, cronobacter: p.src.cronobacter,
       });
     });
+
+    if (s.dashed) ctx.globalAlpha = 1.0;
   });
 
   return hitPoints;
@@ -163,8 +169,12 @@ export function drawChart(canvas, series, seuil) {
 // ─────────────────────────────────────────────
 // TREND CHART COMPONENT — series: [{ pointId, label, color, points: [{date, ufc, salmonella}] }]
 // ─────────────────────────────────────────────
-export default function TrendChart({ series, seuil }) {
+const TrendChart = forwardRef(function TrendChart({ series, seuil }, ref) {
   const canvasRef    = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    getDataUrl: () => canvasRef.current?.toDataURL("image/png") ?? null,
+  }));
   const wrapRef       = useRef(null);
   const hitPointsRef  = useRef([]);
   const [hover, setHover] = useState(null);
@@ -233,7 +243,7 @@ export default function TrendChart({ series, seuil }) {
               {hover.description}
             </div>
           )}
-          <div style={{ color: "#60a5fa", marginTop: 2 }}>{fmtDateFull(new Date(hover.date))}</div>
+          <div style={{ color: "#c4a882", marginTop: 2 }}>{fmtDateFull(new Date(hover.date))}</div>
           <div style={{ color: "#fbbf24" }}>{hover.ufc} UFC/cm²</div>
           {hover.salmonella === true && (
             <div style={{ color: "#ff8a7a", fontWeight: 700, marginTop: 2 }}>⚠ Salmonelles détectées</div>
@@ -245,4 +255,6 @@ export default function TrendChart({ series, seuil }) {
       )}
     </div>
   );
-}
+});
+
+export default TrendChart;

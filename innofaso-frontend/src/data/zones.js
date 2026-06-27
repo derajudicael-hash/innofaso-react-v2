@@ -72,6 +72,7 @@ export const NAV_ITEMS = [
   { id: "carto",     label: "Cartographie",    icon: "map" },
   { id: "history",   label: "Historique",      icon: "clock" },
   { id: "alerts",    label: "Alertes",         icon: "bell", badge: 1 },
+  { id: "rapport",   label: "Rapport IA",      icon: "bar-chart-2" },
   { id: "settings",  label: "Paramètres",      icon: "settings", spacer: true },
 ];
 

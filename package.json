@@ -5,7 +5,6 @@
   "scripts": {
     "postinstall": "npm --prefix innofaso-backend/backend install && npm --prefix innofaso-frontend install && npm --prefix map install",
     "setup": "node innofaso-backend/backend/setup-db.js",
-    "reset": "node innofaso-backend/backend/setup-db.js --reset",
     "dev": "concurrently --kill-others-on-fail -n \"BACK,FRONT,MAP\" -c \"blue,green,magenta\" \"npm --prefix innofaso-backend/backend run dev\" \"npm --prefix innofaso-frontend run dev\" \"npm --prefix map run dev\""
   },
   "devDependencies": {

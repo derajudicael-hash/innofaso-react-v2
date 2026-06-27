@@ -2,22 +2,24 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { zonesAPI, settingsAPI } from "../services/api";
 
-// Fallback static data for when backend is not available
+// Structure de zones de secours : uniquement le minimum structurel.
+// Pas de ufc/status/history fictifs — useComputedZones recalcule tout
+// depuis les données réelles de PointsContext (hasData=false → zones grises).
 const FALLBACK_ZONES = [
-  { id: 1,  mapId: 'stockage_pf',        label: 'Stockage Produits Finis',  status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Koné Ibrahim',     alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 2,  mapId: 'conditionnement',    label: 'Conditionnement',           status: 'critical', ufc: 13, seuil: 10,  seuilManual: false, responsible: 'Sawadogo Marie',    alert_cls: 'crit', alert_title: 'Action requise', alert_desc: 'Niveau critique – Action corrective immédiate obligatoire', history: [13] },
-  { id: 3,  mapId: 'melange',            label: 'Mélange',                   status: 'warning',  ufc: 0,  seuil: 10,  seuilManual: false, responsible: 'Traoré Amina',      alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
-  { id: 4,  mapId: 'premix',             label: 'Pré-Mélange',               status: 'warning',  ufc: 0,  seuil: 10,  seuilManual: false, responsible: 'Ouédraogo Paul',    alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
-  { id: 5,  mapId: 'pesage',             label: 'Pesage poudres',            status: 'critical', ufc: 11, seuil: 10,  seuilManual: false, responsible: 'Compaoré Jean',     alert_cls: 'crit', alert_title: 'Action requise', alert_desc: 'Niveau critique – Action corrective immédiate obligatoire', history: [11] },
-  { id: 6,  mapId: 'huile',              label: 'Huile et pesage S+A+H',     status: 'ok',      ufc: 0,  seuil: 10,  seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 7,  mapId: 'sas_poudres',        label: 'SAS poudres',               status: 'warning',  ufc: 0,  seuil: 100, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'warn', alert_title: 'Surveillance requise', alert_desc: "Niveau d'attention – Renforcer la fréquence des contrôles", history: [0] },
-  { id: 8,  mapId: 'matieres_premieres', label: 'Matières Premières',        status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 9,  mapId: 'laverie',            label: 'Laverie + buanderie',       status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 10, mapId: 'vestiaire_laverie',  label: 'Vestiaire Laverie',         status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 11, mapId: 'vestiaires_h',       label: 'Vestiaires H',              status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 12, mapId: 'vestiaires_visiteur',label: 'Vestiaires Visiteur',       status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 13, mapId: 'vestiaires_f',       label: 'Vestiaires F',              status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
-  { id: 14, mapId: 'labo_microbiologie', label: 'Labo Microbiologie',        status: 'ok',      ufc: 0,  seuil: 500, seuilManual: false, responsible: 'Non assigné',       alert_cls: 'good', alert_title: 'Zone conforme',  alert_desc: 'Niveaux dans les limites acceptables', history: [0] },
+  { id: 1,  mapId: 'stockage_pf',         label: 'Stockage Produits Finis',    seuil: 500, seuilManual: false, responsible: 'Koné Ibrahim' },
+  { id: 2,  mapId: 'conditionnement',     label: 'Conditionnement',             seuil: 10,  seuilManual: false, responsible: 'Sawadogo Marie' },
+  { id: 3,  mapId: 'melange',             label: 'Mélange',                     seuil: 10,  seuilManual: false, responsible: 'Traoré Amina' },
+  { id: 4,  mapId: 'premix',              label: 'Pré-Mélange',                 seuil: 10,  seuilManual: false, responsible: 'Ouédraogo Paul' },
+  { id: 5,  mapId: 'pesage',              label: 'Pesage poudres',              seuil: 10,  seuilManual: false, responsible: 'Compaoré Jean' },
+  { id: 6,  mapId: 'huile',               label: 'Huile et pesage S+A+H',       seuil: 10,  seuilManual: false, responsible: 'Non assigné' },
+  { id: 7,  mapId: 'sas_poudres',         label: 'SAS poudres',                 seuil: 100, seuilManual: false, responsible: 'Non assigné' },
+  { id: 8,  mapId: 'matieres_premieres',  label: 'Matières Premières',          seuil: 500, seuilManual: false, responsible: 'Non assigné' },
+  { id: 9,  mapId: 'laverie',             label: 'Laverie + buanderie',         seuil: 500, seuilManual: false, responsible: 'Non assigné' },
+  { id: 10, mapId: 'vestiaire_laverie',   label: 'Vestiaire Laverie',           seuil: 500, seuilManual: false, responsible: 'Non assigné' },
+  { id: 11, mapId: 'vestiaires_h',        label: 'Vestiaires H',                seuil: 500, seuilManual: false, responsible: 'Non assigné' },
+  { id: 12, mapId: 'vestiaires_visiteur', label: 'Vestiaires Visiteur',         seuil: 500, seuilManual: false, responsible: 'Non assigné' },
+  { id: 13, mapId: 'vestiaires_f',        label: 'Vestiaires F',                seuil: 500, seuilManual: false, responsible: 'Non assigné' },
+  { id: 14, mapId: 'labo_microbiologie',  label: 'Labo Microbiologie',          seuil: 500, seuilManual: false, responsible: 'Non assigné' },
 ];
 
 const FALLBACK_SITE_INFO = {

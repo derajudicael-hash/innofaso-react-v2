@@ -68,16 +68,14 @@ export function usePersistedFiles() {
       reportRef: first?.reportRef ?? '',
     };
     setFileEntries(prev => { const n = [...prev, entry]; safeSet(KEY_ENTRIES, n); return n; });
-    setFileResults(prev => { const n = { ...prev, [id]: results }; safeSet(KEY_RESULTS, n); return n; });
+    setFileResults(prev => { const n = { ...prev, [id]: results }; safeSet(KEY_RESULTS, n); notifySync(); return n; });
     setActiveFileId(id);
-    notifySync(); // hors du callback setState — évite "update during render"
   }, []);
 
   const removeFile = useCallback((id) => {
     setFileEntries(prev => { const n = prev.filter(e => e.id !== id); safeSet(KEY_ENTRIES, n); return n; });
-    setFileResults(prev => { const n = { ...prev }; delete n[id]; safeSet(KEY_RESULTS, n); return n; });
+    setFileResults(prev => { const n = { ...prev }; delete n[id]; safeSet(KEY_RESULTS, n); notifySync(); return n; });
     setActiveFileId(prev => prev === id ? null : prev);
-    notifySync(); // hors du callback setState — évite "update during render"
   }, []);
 
   const clearAll = useCallback(() => {

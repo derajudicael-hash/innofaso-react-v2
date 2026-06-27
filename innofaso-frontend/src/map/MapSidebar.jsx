@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ZONES, isRandomPointId } from './factoryData.js';
 import { getLevel, getZoneLevel, getPointOverallLevel, LEVEL_COLORS, LEVEL_LABELS } from './labParser.js';
 
@@ -16,7 +16,7 @@ function LevelBadge({ level }) {
 
 function RandomBadge() {
   return (
-    <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px', color: '#3b82f6', background: '#3b82f615', border: '1px solid #3b82f655', borderRadius: 999, padding: '1px 6px', verticalAlign: 'middle' }}>
+    <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px', color: '#5c5852', background: '#5c585215', border: '1px solid #5c585255', borderRadius: 999, padding: '1px 6px', verticalAlign: 'middle' }}>
       Aléatoire
     </span>
   );
@@ -80,8 +80,16 @@ function ResultBlock({ result }) {
 }
 
 export default function MapSidebar({ zone, point, results, backendZone, onClose, onSelectPoint, onBackToZone, points }) {
+  const [ptSearch, setPtSearch] = useState('');
   if (!zone) return null;
   const zonePoints = points ?? [];
+  const filteredPoints = ptSearch.trim()
+    ? zonePoints.filter(pt =>
+        (pt.label || '').toLowerCase().includes(ptSearch.toLowerCase()) ||
+        (pt.id || '').toLowerCase().includes(ptSearch.toLowerCase()) ||
+        (pt.description || '').toLowerCase().includes(ptSearch.toLowerCase())
+      )
+    : zonePoints;
   const zoneLevel = getZoneLevel(results, zonePoints.map(p => p.id));
   const withData = zonePoints.filter(p => results.has(p.id)).length;
 
@@ -98,7 +106,7 @@ export default function MapSidebar({ zone, point, results, backendZone, onClose,
       {/* Header */}
       <div style={s.header}>
         {point && (
-          <button onClick={onBackToZone} style={{ fontSize: 12, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button onClick={onBackToZone} style={{ fontSize: 12, color: '#5c5852', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
             &lt; {zone.name}
           </button>
         )}
@@ -175,8 +183,21 @@ export default function MapSidebar({ zone, point, results, backendZone, onClose,
             })()}
 
             {/* Points list */}
-            <div style={s.label}>Points de prélèvement ({zonePoints.length})</div>
-            {zonePoints.map(pt => {
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={s.label}>Points de prélèvement ({zonePoints.length})</div>
+            </div>
+            <input
+              type="text"
+              value={ptSearch}
+              onChange={e => setPtSearch(e.target.value)}
+              placeholder="Rechercher un point…"
+              style={{
+                width: '100%', boxSizing: 'border-box', marginBottom: 8,
+                padding: '6px 10px', borderRadius: 7, border: '1px solid #e2e8f0',
+                fontSize: 12, color: '#334155', outline: 'none', background: '#f8fafc',
+              }}
+            />
+            {filteredPoints.map(pt => {
               const ptR = results.get(pt.id) || [];
               const lvl = ptR.length > 0 ? getPointOverallLevel(ptR) : 'unknown';
               const c = LEVEL_COLORS[lvl];
@@ -209,12 +230,39 @@ export default function MapSidebar({ zone, point, results, backendZone, onClose,
             <p style={{ fontSize: 12, color: '#64748b', marginBottom: 14, lineHeight: 1.5 }}>{point.description}</p>
             {(() => {
               const ptR = results.get(point.id) || [];
-              if (ptR.length === 0) return (
-                <div style={{ ...s.card, textAlign: 'center', padding: 24 }}>
-                  <div style={{ fontSize: 13, color: '#64748b' }}>Aucun résultat pour ce point</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Importez un bulletin d'analyse</div>
-                </div>
-              );
+              if (ptR.length === 0) {
+                const lastUfc = point.ufc !== null && point.ufc !== undefined ? point.ufc : null;
+                const lastDate = point.lastMeasuredAt
+                  ? new Date(point.lastMeasuredAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+                  : null;
+                if (lastUfc !== null) {
+                  const st = lastUfc >= (point.seuil ?? 50) ? 'red' : lastUfc >= (point.seuil ?? 50) * 0.8 ? 'orange' : 'green';
+                  const stColor = LEVEL_COLORS[st] ?? '#64748b';
+                  return (
+                    <div style={{ ...s.card, padding: '12px 14px' }}>
+                      <div style={{ ...s.label, marginBottom: 8 }}>Dernière valeur connue</div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <span style={{ fontSize: 28, fontWeight: 900, color: stColor, fontFamily: 'Inter, system-ui' }}>
+                          {lastUfc < 1 ? '<1' : lastUfc.toFixed(1)}
+                        </span>
+                        <span style={{ fontSize: 13, color: '#94a3b8' }}>UFC/cm²</span>
+                      </div>
+                      {lastDate && (
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{lastDate}</div>
+                      )}
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0', fontSize: 11, color: '#94a3b8' }}>
+                        Ce point n'est pas dans le bulletin actif — valeur issue du dernier import.
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ ...s.card, textAlign: 'center', padding: 24 }}>
+                    <div style={{ fontSize: 13, color: '#64748b' }}>Aucun résultat pour ce point</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Importez un bulletin d'analyse</div>
+                  </div>
+                );
+              }
               return ptR.map(r => <ResultBlock key={r.parameter} result={r} />);
             })()}
             <div style={{ ...s.card, marginTop: 8 }}>

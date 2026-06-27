@@ -67,23 +67,21 @@ INSERT INTO admin_users (username, password, name, role) VALUES
 ON DUPLICATE KEY UPDATE password = VALUES(password), name = VALUES(name), role = VALUES(role);
 
 -- ── 14 zones de l'usine (IDs = factory-hygiene zone IDs) ──────────────────
--- UFC = 0 : état zéro à l'installation. Les valeurs réelles sont alimentées
--- automatiquement lors de l'import du premier bulletin microbiologique.
 INSERT INTO zones (map_id, label, status, ufc, seuil, responsible, alert_cls, alert_title, alert_desc) VALUES
-('stockage_pf',        'Stockage Produits Finis',  'ok', 0, 500, 'Ouedraogo Paul',  'good', 'Zone conforme', ''),
-('conditionnement',    'Conditionnement',           'ok', 0,  10, 'Sawadogo Marie',  'good', 'Zone conforme', ''),
-('melange',            'Mélange',                   'ok', 0,  10, 'Kone Ibrahim',    'good', 'Zone conforme', ''),
-('premix',             'PreMélange',                'ok', 0,  10, 'Kone Ibrahim',    'good', 'Zone conforme', ''),
-('pesage',             'Pesage poudres',            'ok', 0,  10, 'Zongo Mariam',    'good', 'Zone conforme', ''),
-('huile',              'Huile et pesage S+A+H',     'ok', 0,  10, 'Kabore Seydou',   'good', 'Zone conforme', ''),
-('sas_poudres',        'SAS poudres',               'ok', 0, 100, 'Zongo Mariam',    'good', 'Zone conforme', ''),
-('matieres_premieres', 'Matières Premières',        'ok', 0, 500, 'Compaore Jean',   'good', 'Zone conforme', ''),
-('laverie',            'Laverie + buanderie',        'ok', 0, 500, 'Traore Amina',    'good', 'Zone conforme', ''),
-('vestiaire_laverie',  'Vestiaire Laverie',          'ok', 0, 500, 'Traore Amina',    'good', 'Zone conforme', ''),
-('vestiaires_h',       'Vestiaires H',               'ok', 0, 500, 'Ouedraogo Paul',  'good', 'Zone conforme', ''),
-('vestiaires_visiteur','Vestiaires Visiteur',         'ok', 0, 500, 'Compaore Jean',   'good', 'Zone conforme', ''),
-('vestiaires_f',       'Vestiaires F',               'ok', 0, 500, 'Sawadogo Marie',  'good', 'Zone conforme', ''),
-('labo_microbiologie', 'Labo Microbiologie',         'ok', 0, 500, 'Zongo Mariam',    'good', 'Zone conforme', '');
+('stockage_pf',       'Stockage Produits Finis',  'ok',       85,  500, 'Ouedraogo Paul',    'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
+('conditionnement',   'Conditionnement',           'ok',        4,   10, 'Sawadogo Marie',    'good', 'Zone conforme',        'Excellente maîtrise de la contamination.'),
+('melange',           'Mélange',                   'warning',   8,   10, 'Kone Ibrahim',      'warn', 'Surveillance requise', 'Niveau proche du seuil — renforcer les contrôles.'),
+('premix',            'PreMélange',                'critical', 13,   10, 'Kone Ibrahim',      'crit', 'Action requise',       'DÉPASSEMENT — arrêter et décontaminer immédiatement.'),
+('pesage',            'Pesage poudres',            'ok',        3,   10, 'Zongo Mariam',      'good', 'Zone conforme',        'Bon niveau de maîtrise.'),
+('huile',             'Huile et pesage S+A+H',     'warning',   9,   10, 'Kabore Seydou',     'warn', 'Surveillance requise', 'Niveau élevé — vérifier équipements.'),
+('sas_poudres',       'SAS poudres',               'ok',       45,  100, 'Zongo Mariam',      'good', 'Zone conforme',        'Niveaux dans les limites acceptables.'),
+('matieres_premieres','Matières Premières',         'ok',      120,  500, 'Compaore Jean',     'good', 'Zone conforme',        'Zone grise — contamination maîtrisée.'),
+('laverie',           'Laverie + buanderie',        'ok',      230,  500, 'Traore Amina',      'good', 'Zone conforme',        'Niveaux normaux pour zone laverie.'),
+('vestiaire_laverie', 'Vestiaire Laverie',          'ok',      180,  500, 'Traore Amina',      'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('vestiaires_h',      'Vestiaires H',               'ok',      290,  500, 'Ouedraogo Paul',    'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('vestiaires_visiteur','Vestiaires Visiteur',        'warning', 415,  500, 'Compaore Jean',     'warn', 'Surveillance requise', 'Niveau élevé — vérifier hygiène visiteurs.'),
+('vestiaires_f',      'Vestiaires F',               'ok',      150,  500, 'Sawadogo Marie',    'good', 'Zone conforme',        'Niveaux dans les limites.'),
+('labo_microbiologie','Labo Microbiologie',         'ok',        0,  500, 'Zongo Mariam',      'good', 'Zone conforme',        'Niveaux dans les limites.');
 
 -- ── Points de prélèvement ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sampling_points (
@@ -193,5 +191,18 @@ CREATE TABLE IF NOT EXISTS pending_points (
   INDEX idx_point (point_id)
 );
 
--- zone_history démarre vide : les courbes d'évolution sont alimentées
--- uniquement par les imports de bulletins réels.
+-- ── Historique 7 jours ───────────────────────────────────────────────────
+INSERT INTO zone_history (zone_id, ufc) VALUES (1,90),(1,88),(1,86),(1,84),(1,87),(1,85),(1,85);
+INSERT INTO zone_history (zone_id, ufc) VALUES (2,5),(2,6),(2,4),(2,5),(2,4),(2,4),(2,4);
+INSERT INTO zone_history (zone_id, ufc) VALUES (3,5),(3,6),(3,7),(3,7),(3,8),(3,8),(3,8);
+INSERT INTO zone_history (zone_id, ufc) VALUES (4,8),(4,9),(4,10),(4,11),(4,12),(4,13),(4,13);
+INSERT INTO zone_history (zone_id, ufc) VALUES (5,4),(5,3),(5,3),(5,4),(5,3),(5,3),(5,3);
+INSERT INTO zone_history (zone_id, ufc) VALUES (6,6),(6,7),(6,8),(6,8),(6,9),(6,9),(6,9);
+INSERT INTO zone_history (zone_id, ufc) VALUES (7,38),(7,40),(7,42),(7,43),(7,44),(7,45),(7,45);
+INSERT INTO zone_history (zone_id, ufc) VALUES (8,125),(8,122),(8,118),(8,121),(8,120),(8,120),(8,120);
+INSERT INTO zone_history (zone_id, ufc) VALUES (9,220),(9,225),(9,228),(9,232),(9,230),(9,230),(9,230);
+INSERT INTO zone_history (zone_id, ufc) VALUES (10,185),(10,182),(10,180),(10,178),(10,180),(10,180),(10,180);
+INSERT INTO zone_history (zone_id, ufc) VALUES (11,280),(11,285),(11,290),(11,288),(11,292),(11,290),(11,290);
+INSERT INTO zone_history (zone_id, ufc) VALUES (12,380),(12,390),(12,400),(12,405),(12,410),(12,415),(12,415);
+INSERT INTO zone_history (zone_id, ufc) VALUES (13,155),(13,152),(13,150),(13,148),(13,150),(13,150),(13,150);
+INSERT INTO zone_history (zone_id, ufc) VALUES (14,0),(14,0),(14,0),(14,0),(14,0),(14,0),(14,0);

@@ -165,13 +165,13 @@ export default function FactoryMap({ results, backendZones = [], dynamicPoints, 
           let fill, stroke;
           if (hasUploadedForZone && level !== 'unknown') {
             fill   = ZONE_DATA_FILL[level];
-            stroke = isSelected ? '#0066cc' : LEVEL_COLORS[level];
+            stroke = isSelected ? '#5c5852' : LEVEL_COLORS[level];
           } else if (bz && bz.hasData !== false) {
             fill   = BACKEND_FILL[bz.status];
-            stroke = isSelected ? '#0066cc' : BACKEND_STROKE[bz.status];
+            stroke = isSelected ? '#5c5852' : BACKEND_STROKE[bz.status];
           } else {
             fill   = GRAY_ZONE_FILL;
-            stroke = isSelected ? '#0066cc' : GRAY_ZONE_STROKE;
+            stroke = isSelected ? '#5c5852' : GRAY_ZONE_STROKE;
           }
           const strokeW = isSelected ? 3 : isHov ? 2.5 : 1.5;
 

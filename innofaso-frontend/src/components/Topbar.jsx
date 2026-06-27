@@ -6,7 +6,7 @@ import { usePoints } from "../context/PointsContext";
 import { ZONES } from "../map/factoryData.js";
 
 const PAGE_META = {
-  dashboard: { title: "Tableau de bord",  sub: "Surveillance temps réel · Usine Plumpy'Nut La Grâce" },
+  dashboard: { title: "Tableau de bord",  sub: "Surveillance microbiologique en temps réel · InnoFaso SA" },
   history:   { title: "Historique",       sub: "Évolution des niveaux microbiologiques par zone" },
   alerts:    { title: "Alertes actives",  sub: "Zones en dépassement ou sous surveillance renforcée" },
   settings:  { title: "Paramètres",       sub: "Configuration des seuils et informations du site" },

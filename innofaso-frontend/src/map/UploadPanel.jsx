@@ -10,9 +10,9 @@ export default function TopBar({ activeFile }) {
     }}>
       {/* Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg,#1a6fa3,#0e4d7a)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: 11 }}>IF</div>
+        <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg,#5c5852,#4a4744)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: 11 }}>IF</div>
         <span style={{ fontWeight: 800, fontSize: 14, color: '#0f172a', letterSpacing: '-0.3px' }}>
-          Inno<span style={{ color: '#1a6fa3' }}>Faso</span>
+          Inno<span style={{ color: '#5c5852' }}>Faso</span>
         </span>
       </div>
 

@@ -10,6 +10,39 @@ import MapSidebar from "../map/MapSidebar.jsx";
 import FileSidebar from "../map/FileSidebar.jsx";
 import TopBar from "../map/UploadPanel.jsx";
 
+// Table salle→zone (même mapping que la table room_zone_map du backend).
+const ROOM_TO_ZONE = {
+  1: 'pesage', 2: 'melange', 3: 'huile', 4: 'premix',
+  5: 'conditionnement', 6: 'sas_poudres', 11: 'matieres_premieres',
+  12: 'stockage_pf', 13: 'laverie', 14: 'vestiaires_h',
+  15: 'vestiaires_f', 16: 'vestiaires_visiteur', 17: 'labo_microbiologie',
+  18: 'vestiaire_laverie',
+};
+function pointIdToZone(id) {
+  const m = String(id).match(/^(\d+)\.(\d+)\.(\d+)$/);
+  return m ? (ROOM_TO_ZONE[Number(m[2])] ?? null) : null;
+}
+
+// Centres de chaque zone en % du plan (miroir de ZONE_GEOMETRY dans
+// pointResolution.js) — utilisé pour placer les points locaux (hors backend)
+// au centre de leur zone au lieu du centre du plan entier (x:50, y:50).
+const ZONE_CENTERS = {
+  stockage_pf:         { x: 11.2, y: 40.9 },
+  conditionnement:     { x: 32.7, y: 43.9 },
+  melange:             { x: 49.6, y: 41.9 },
+  premix:              { x: 64.2, y: 28.0 },
+  pesage:              { x: 64.2, y: 64.6 },
+  huile:               { x: 78.1, y: 33.9 },
+  sas_poudres:         { x: 78.1, y: 67.6 },
+  matieres_premieres:  { x: 94.3, y: 40.9 },
+  laverie:             { x: 32.7, y: 88.8 },
+  vestiaire_laverie:   { x: 11.2, y: 88.8 },
+  vestiaires_h:        { x: 49.6, y: 88.8 },
+  vestiaires_visiteur: { x: 62.7, y: 88.8 },
+  vestiaires_f:        { x: 76.5, y: 88.8 },
+  labo_microbiologie:  { x: 86.3, y: 88.8 },
+};
+
 export default function CartoPage() {
   const { pointsByZone, reload: reloadPoints, error: pointsError } = usePoints();
   const { reload: reloadAdminData } = useAdminData();
@@ -17,24 +50,58 @@ export default function CartoPage() {
   const { computedZones } = useComputedZones(activeResults);
   const { user } = useAuth();
 
-  // Bulletin affiché sur la carte (cf. AdminPage, onglet "Bulletin sur la
-  // carte") : ne filtre que ce qui est montré sur la carte/le détail de
-  // zone — la liste complète (pointsByZone) reste intacte pour l'import.
+  // Fallback local : quand pointsByZone est vide (première utilisation ou
+  // backend inaccessible), on déduit la zone de chaque point depuis son ID
+  // "E.S.N" via ROOM_TO_ZONE — permet à la carte de colorer les zones dès
+  // l'import, même sans aller-retour serveur.
+  // Points locaux (non encore en backend) : positionnés au centre de leur zone
+  // via ZONE_CENTERS — évite le bug x:50,y:50 qui empilait tout en zone Mélange.
+  // Aussi valable quand le backend a DÉJÀ des points : on complète seulement
+  // pour les IDs du bulletin actif absents de pointsByZone (import hors-ligne).
+  const localPointsByZone = useMemo(() => {
+    if (activeResults.size === 0) return null;
+    const backendIds = new Set(Object.values(pointsByZone).flatMap(pts => pts.map(p => p.id)));
+    const map = {};
+    for (const pointId of activeResults.keys()) {
+      if (backendIds.has(pointId)) continue; // déjà géré par le backend
+      const zone = pointIdToZone(pointId);
+      if (!zone) continue;
+      if (!map[zone]) map[zone] = [];
+      const c = ZONE_CENTERS[zone] ?? { x: 50, y: 50 };
+      map[zone].push({ id: pointId, label: pointId, x: c.x, y: c.y });
+    }
+    return Object.keys(map).length > 0 ? map : null;
+  }, [activeResults, pointsByZone]);
+
   const { allowedIds } = useMapDisplaySelection();
+
+  // Points affichés = backend filtrés au bulletin actif + points locaux manquants.
   const displayedPointsByZone = useMemo(() => {
-    if (!allowedIds) return pointsByZone;
-    return Object.fromEntries(
-      Object.entries(pointsByZone).map(([zoneId, pts]) => [zoneId, pts.filter(p => allowedIds.has(p.id))])
+    if (!allowedIds && activeResults.size === 0) return {};
+    const filterFn = (p) => allowedIds ? allowedIds.has(p.id) : activeResults.has(p.id);
+    const base = Object.fromEntries(
+      Object.entries(pointsByZone).map(([z, pts]) => [z, pts.filter(filterFn)])
     );
-  }, [pointsByZone, allowedIds]);
+    if (localPointsByZone) {
+      for (const [z, pts] of Object.entries(localPointsByZone)) {
+        const filtered = pts.filter(filterFn);
+        if (filtered.length) base[z] = [...(base[z] || []), ...filtered];
+      }
+    }
+    return base;
+  }, [localPointsByZone, pointsByZone, activeResults, allowedIds]);
 
   const [selectedZone, setSelectedZone] = useState(null);
   const [selectedPoint, setSelectedPoint] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [importWarning, setImportWarning] = useState(null);
   const [pendingImport, setPendingImport] = useState(null); // { file, results } en attente de confirmation
+  const [pendingPoints, setPendingPoints] = useState([]); // IDs non résolus après import
 
-  const backendZones = computedZones.map(z => ({
+  // Zones colorées uniquement depuis les données du bulletin actif — vide si
+  // aucun bulletin chargé (carte grise) pour éviter d'afficher des couleurs
+  // issues d'un import précédent qui n'est plus "actif" à l'écran.
+  const backendZones = activeResults.size === 0 ? [] : computedZones.map(z => ({
     id: z.id, mapId: z.mapId, status: z.status, ufc: z.ufc,
     seuil: z.seuil, label: z.label, hasData: z.hasData,
   }));
@@ -49,7 +116,7 @@ export default function CartoPage() {
   const zoneLabelByMapId = {};
   computedZones.forEach(z => { zoneLabelByMapId[z.mapId] = z.label; });
   const zoneMapIdByPointId = {};
-  Object.entries(pointsByZone).forEach(([zoneMapId, pts]) => {
+  Object.entries(localPointsByZone ?? pointsByZone).forEach(([zoneMapId, pts]) => {
     pts.forEach(p => { zoneMapIdByPointId[p.id] = zoneMapId; });
   });
 
@@ -97,21 +164,15 @@ export default function CartoPage() {
         const { labResultsAPI } = await import('../services/api.js');
         const sync = await labResultsAPI.import(results, file.name);
         if (sync?.pending?.length) {
-          const n = sync.pending.length;
-          const createdNote = sync.created?.length
-            ? ` (${sync.created.length} autre${sync.created.length > 1 ? "s" : ""} créé${sync.created.length > 1 ? "s" : ""} automatiquement sur la carte)`
-            : "";
-          setImportWarning(
-            `${n} identifiant${n > 1 ? "s" : ""} (${sync.pending.join(", ")}) n'${n > 1 ? "ont" : "a"} pas pu être ` +
-            `rattaché${n > 1 ? "s" : ""} automatiquement à une zone${createdNote} — à placer dans ` +
-            `Administration → Points à placer pour qu'il${n > 1 ? "s" : ""} apparaisse${n > 1 ? "nt" : ""} sur la carte.`
-          );
+          setPendingPoints(sync.pending);
         }
-        await Promise.all([reloadPoints(), reloadAdminData()]);
       } catch (syncErr) {
         console.error('Erreur de synchronisation avec le backend:', syncErr);
         setImportWarning("Le fichier a été importé localement mais la synchronisation avec le serveur a échoué — les zones risquent d'afficher des valeurs obsolètes.");
       }
+      // Recharger les points dans tous les cas (sync réussie ou non) pour
+      // refléter les nouveaux points créés côté backend lors de l'import.
+      await Promise.all([reloadPoints(), reloadAdminData()]);
     } finally {
       setIsLoading(false);
     }
@@ -155,16 +216,40 @@ export default function CartoPage() {
           <span>⛔ Connexion au serveur perdue — les points de prélèvement ne peuvent pas être chargés. Vérifiez que le backend tourne, puis rechargez la page.</span>
         </div>
       )}
-      {importWarning && (
+      {pendingPoints.length > 0 && (
         <div style={{
           background: '#fff3cd', borderBottom: '1px solid #ffe08a', color: '#7a5b00',
+          padding: '10px 16px', fontSize: 13, display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', gap: 12,
+        }}>
+          <span>
+            ⚠️ <b>{pendingPoints.length} point{pendingPoints.length > 1 ? 's' : ''}</b> non reconnu{pendingPoints.length > 1 ? 's' : ''} ({pendingPoints.slice(0, 4).join(', ')}{pendingPoints.length > 4 ? '…' : ''}) — à placer manuellement sur la carte pour qu'ils apparaissent dans les analyses.
+          </span>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('innofaso:navigate', { detail: { to: 'admin' } }))}
+              style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid #d97706', background: '#d97706', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+            >
+              Aller à Administration
+            </button>
+            <button
+              onClick={() => setPendingPoints([])}
+              style={{ background: 'none', border: 'none', color: '#7a5b00', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+              aria-label="Fermer"
+            >×</button>
+          </div>
+        </div>
+      )}
+      {importWarning && (
+        <div style={{
+          background: '#fee2e2', borderBottom: '1px solid #fca5a5', color: '#991b1b',
           padding: '8px 16px', fontSize: 13, display: 'flex', alignItems: 'center',
           justifyContent: 'space-between', gap: 12,
         }}>
-          <span>⚠️ {importWarning}</span>
+          <span>⛔ {importWarning}</span>
           <button
             onClick={() => setImportWarning(null)}
-            style={{ background: 'none', border: 'none', color: '#7a5b00', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}
+            style={{ background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}
             aria-label="Fermer l'avertissement"
           >×</button>
         </div>
@@ -185,7 +270,7 @@ export default function CartoPage() {
                 {importSummary.salmoCount > 0 && <span><b>{importSummary.salmoCount}</b> salmonelles</span>}
                 {importSummary.cronoCount > 0 && <span><b>{importSummary.cronoCount}</b> Cronobacter</span>}
               </div>
-              {importSummary.zones.length > 0 && (
+              {importSummary.zones.length > 0 ? (
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Zones touchées</div>
                   {importSummary.zones.map(([label, count]) => (
@@ -194,7 +279,11 @@ export default function CartoPage() {
                     </div>
                   ))}
                 </div>
-              )}
+              ) : importSummary.unmatchedCount < importSummary.total ? (
+                <div style={{ fontSize: 11.5, color: '#64748b', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 6, padding: '6px 8px', marginTop: 6 }}>
+                  ℹ️ Les zones seront mises à jour automatiquement depuis la base de données après confirmation.
+                </div>
+              ) : null}
               {importSummary.unmatchedCount > 0 && (
                 <div style={{ marginTop: 10, fontSize: 11.5, color: '#7a5b00', background: '#fff3cd', border: '1px solid #ffe08a', borderRadius: 6, padding: '6px 8px' }}>
                   ℹ️ {importSummary.unmatchedCount} identifiant{importSummary.unmatchedCount > 1 ? 's' : ''} nouveau{importSummary.unmatchedCount > 1 ? 'x' : ''} (hors catalogue actuel) — sera{importSummary.unmatchedCount > 1 ? 'nt' : ''} créé{importSummary.unmatchedCount > 1 ? 's' : ''} automatiquement, ou mis en attente de placement si la salle n'est pas reconnue.
@@ -205,7 +294,7 @@ export default function CartoPage() {
               <button onClick={handleCancelImport} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                 Annuler
               </button>
-              <button onClick={handleConfirmImport} style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: '#1a6fa3', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              <button onClick={handleConfirmImport} style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: '#5c5852', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                 Confirmer l'import
               </button>
             </div>
@@ -222,6 +311,7 @@ export default function CartoPage() {
           onClearAll={clearAll}
           onUpload={() => document.getElementById('file-input')?.click()}
           isLoading={isLoading}
+          isAdmin={!!user}
         />
         <input
           id="file-input"
